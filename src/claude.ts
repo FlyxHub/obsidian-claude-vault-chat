@@ -54,7 +54,10 @@ function launchOptions(exe: string, cwd: string, abort: AbortController, onStder
 		abortController: abort,
 		pathToClaudeCodeExecutable: exe,
 		cwd,
-		settingSources: ['project'], // the vault's CLAUDE.md + .claude/settings.json; nothing from ~/.claude
+		// No filesystem settings at all: ~/.claude stays out, and so does the vault's .claude/settings.json,
+		// whose hooks and env would run without a trust prompt for anyone who opens a shared vault.
+		// The vault's CLAUDE.md is passed as plain instructions instead (see vaultInstructions).
+		settingSources: [],
 		strictMcpConfig: true, // no MCP servers, including claude.ai connectors
 		spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
 			// Node's spawn() rejects the renderer's DOM AbortSignal, so kill on abort ourselves.
@@ -98,6 +101,15 @@ export async function testConnection(exe: string, cwd: string) {
 		void (async () => {
 			for await (const _ of q); // drain so the process can exit
 		})().catch(() => {});
+	}
+}
+
+// The vault's CLAUDE.md, read as text: instructions only, no code paths.
+function vaultInstructions(vault: string): string {
+	try {
+		return `\n\nThe vault's CLAUDE.md:\n\n${fs.readFileSync(path.join(vault, 'CLAUDE.md'), 'utf8')}`;
+	} catch {
+		return ''; // no CLAUDE.md
 	}
 }
 
@@ -168,7 +180,7 @@ export function runTurn(o: {
 				],
 			},
 			includePartialMessages: true,
-			systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_APPEND },
+			systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_APPEND + vaultInstructions(o.cwd) },
 		},
 	});
 
