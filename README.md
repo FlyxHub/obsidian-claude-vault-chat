@@ -23,7 +23,7 @@ Copy `main.js`, `manifest.json` and `styles.css` into `<your vault>/.obsidian/pl
 
 - **The pane** opens on first run in the left sidebar, stacked under the File Explorer. The chevron in its header collapses it to a single row. Drag the divider above it to resize.
 - **Commands** (Ctrl+P): *Open or focus chat* (also the ribbon's bot icon) and *Move chat to right sidebar*. To move it back, close the pane and click the ribbon icon.
-- **Chatting:** the pane looks and works like a Claude Desktop chat. Enter sends and Shift+Enter adds a new line. While Claude works, the send button becomes **Stop**, which interrupts the reply and keeps the conversation. The pen icon in the header starts a **New chat**. A conversation lasts until New chat. It isn't restored after restarting Obsidian.
+- **Chatting:** the pane works like a Claude Desktop chat, in your Obsidian theme's colors (only the send button and the ✻ spark keep Claude's clay). Enter sends and Shift+Enter adds a new line. While Claude works, the send button becomes **Stop**, which interrupts the reply and keeps the conversation. The pen icon in the header starts a **New chat**. A conversation lasts until New chat. It isn't restored after restarting Obsidian.
 - **Below the message box:** the left menu switches the approval mode, and the right menu picks the model. Choose *Load available models* the first time. Copy a reply with the icon under it.
 - **Tool activity** shows as compact rows, such as "Reading Onboarding.md". Click a row to see the details. `[[Links]]` in replies are clickable.
 - **Approvals:** before an edit, an inline card offers **Allow once**, **Allow for this chat** (that tool, until New chat) or **Deny**. Edit cards show the old text in red and the new text in green.

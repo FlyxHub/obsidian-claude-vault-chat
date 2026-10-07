@@ -1,75 +1,34 @@
 /*
- * Claude Vault Chat: the chat pane takes on Claude Desktop's look.
- * Warm neutrals, serif for Claude's voice, sans for everything else,
- * and clay reserved for what Claude does (send, the spark).
- * Follows Obsidian's light/dark mode.
+ * Claude Vault Chat: the chat pane takes on Claude Desktop's layout and voice
+ * (serif replies, sans chrome) in the colors of the installed Obsidian theme.
+ * Clay is kept for what Claude does: the send button and the spark.
  */
 
 .claude-chat {
-	--cvc-bg: #faf9f5;
-	--cvc-surface: #ffffff;
-	--cvc-bubble: #f0eee6;
-	--cvc-code: #f0eee6;
-	--cvc-text: #1f1e1d;
-	--cvc-text-2: #5e5d59;
-	--cvc-text-3: #8f8d85;
-	--cvc-border: rgba(31, 30, 29, 0.12);
-	--cvc-border-strong: rgba(31, 30, 29, 0.24);
-	--cvc-hover: rgba(31, 30, 29, 0.05);
+	/* Everything except clay comes from the theme, so any theme (and its light/dark modes) carries through. */
+	--cvc-bg: var(--background-secondary); /* same as the File Explorer and other sidebar panes */
+	--cvc-surface: var(--background-modifier-form-field); /* the theme's input color: the composer and cards */
+	--cvc-bubble: var(--background-modifier-hover);
+	--cvc-code: var(--code-background);
+	--cvc-text: var(--text-normal);
+	--cvc-text-2: var(--text-muted);
+	--cvc-text-3: var(--text-faint);
+	--cvc-border: var(--background-modifier-border);
+	--cvc-border-strong: var(--background-modifier-border-hover);
+	--cvc-hover: var(--background-modifier-hover);
+	--cvc-danger: var(--text-error);
+	--cvc-danger-bg: rgba(var(--color-red-rgb), 0.1);
+	--cvc-add-bg: rgba(var(--color-green-rgb), 0.14);
+	--cvc-del-bg: rgba(var(--color-red-rgb), 0.12);
+	--cvc-focus: var(--interactive-accent);
+	--cvc-shadow: var(--shadow-s);
 	--cvc-clay: #c96442;
 	--cvc-clay-hover: #b0563a;
 	--cvc-spark: #d97757;
-	--cvc-danger: #a8402f;
-	--cvc-danger-bg: rgba(168, 64, 47, 0.07);
-	--cvc-add-bg: rgba(56, 128, 64, 0.11);
-	--cvc-del-bg: rgba(168, 64, 47, 0.1);
-	--cvc-focus: #2c84db;
-	--cvc-shadow: 0 1px 2px rgba(31, 30, 29, 0.04), 0 4px 18px rgba(31, 30, 29, 0.06);
 	--cvc-serif: Charter, 'Iowan Old Style', Georgia, serif; /* Anthropic's own faces aren't licensed for bundling */
-
-	/* Point Obsidian's own variables at the palette so rendered markdown matches. */
-	--text-normal: var(--cvc-text);
-	--text-muted: var(--cvc-text-2);
-	--text-faint: var(--cvc-text-3);
-	--background-primary: var(--cvc-bg);
-	--background-primary-alt: var(--cvc-code);
-	--background-secondary: var(--cvc-bubble);
-	--background-modifier-border: var(--cvc-border);
-	--background-modifier-hover: var(--cvc-hover);
-	--code-background: var(--cvc-code);
-	--code-normal: var(--cvc-text);
-	--link-color: var(--cvc-text);
-	--link-color-hover: var(--cvc-clay);
-	--link-external-color: var(--cvc-text);
-	--link-external-color-hover: var(--cvc-clay);
-	--link-unresolved-color: var(--cvc-text-2);
-	--link-decoration: underline;
-	--link-external-decoration: underline;
-	--icon-color: var(--cvc-text-2);
-	--icon-color-hover: var(--cvc-text);
 
 	background: var(--cvc-bg);
 	color: var(--cvc-text);
-}
-
-.theme-dark .claude-chat {
-	--cvc-bg: #262624;
-	--cvc-surface: #30302e;
-	--cvc-bubble: #141413;
-	--cvc-code: #1f1e1d;
-	--cvc-text: #f5f4ee;
-	--cvc-text-2: #c2c0b6;
-	--cvc-text-3: #8f8d85;
-	--cvc-border: rgba(222, 220, 209, 0.12);
-	--cvc-border-strong: rgba(222, 220, 209, 0.24);
-	--cvc-hover: rgba(255, 255, 255, 0.05);
-	--cvc-clay-hover: #d97757;
-	--cvc-danger: #ec8a79;
-	--cvc-danger-bg: rgba(236, 138, 121, 0.1);
-	--cvc-add-bg: rgba(110, 190, 115, 0.14);
-	--cvc-del-bg: rgba(236, 138, 121, 0.14);
-	--cvc-focus: #5ba4e8;
-	--cvc-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 18px rgba(0, 0, 0, 0.22);
 }
 
 .claude-chat.view-content {
