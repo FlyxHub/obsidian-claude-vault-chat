@@ -1,8 +1,8 @@
 import { FileSystemAdapter, ItemView, MarkdownRenderer, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from 'obsidian';
-import type { PermissionResult, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionResult, SDKAssistantMessageError, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import fs from 'fs';
 import path from 'path';
-import { findClaude, runTurn, type Turn } from './claude';
+import { ClaudeError, findClaude, runTurn, type Turn } from './claude';
 import type ClaudeVaultChat from './main';
 import { vaultRelative } from './vaultPath';
 
@@ -36,6 +36,8 @@ export class ChatView extends ItemView {
 	private vault = '';
 	private editTargets = new Map<string, string>(); // tool_use id → vault-relative path of an Edit/Write
 	private shownThisTurn = new Set<string>(); // open each edited file once per turn
+	private errorShown = false; // a friendly error was shown this turn; skip the raw result error
+	private resetsAt?: number; // usage-limit reset time (unix seconds) from the latest rate_limit_event
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -162,25 +164,34 @@ export class ChatView extends ItemView {
 		this.addDiv('claude-msg claude-user', text);
 		this.chat.messagesEl.scrollTop = this.chat.messagesEl.scrollHeight;
 
-		const exe = findClaude();
+		const s = this.plugin.settings;
+		const exe = findClaude(s.claudePath);
 		const adapter = this.app.vault.adapter;
-		if (!exe || !(adapter instanceof FileSystemAdapter)) {
-			this.addDiv('claude-error', !exe ? 'Claude Code was not found. Install it from https://claude.com/claude-code and run `claude` once to log in.' : 'This vault is not on the local file system.');
+		if (!exe) {
+			const msg = s.claudePath
+				? `Claude Code can't be started from "${s.claudePath}". Point the Executable setting at claude.exe (not a .cmd shim), or clear it to auto-detect.`
+				: 'Claude Code was not found. Install it from https://claude.com/claude-code, run `claude` once in a terminal to log in, or set its path in settings.';
+			this.addError(msg, { settings: true });
+			return;
+		}
+		if (!(adapter instanceof FileSystemAdapter)) {
+			this.addError('This vault is not on the local file system.');
 			return;
 		}
 
 		const chat = this.chat;
-		const s = this.plugin.settings;
 		const vault = adapter.getBasePath();
 		this.vault = vault;
 		this.shownThisTurn.clear();
 		this.editTargets.clear();
 		this.stopping = false;
+		this.errorShown = false;
 		this.turn = runTurn({
 			prompt: text,
 			cwd: vault,
 			exe,
 			resume: chat.sessionId,
+			model: s.model || undefined,
 			tools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', ...(s.allowBash ? ['Bash'] : []), ...(s.allowWeb ? ['WebFetch', 'WebSearch'] : [])],
 			protectedDirs: [this.app.vault.configDir, '.git', '.claude'],
 			canUseTool: (tool, input, opts) => this.canUseTool(tool, input, opts.signal, vault),
@@ -193,7 +204,8 @@ export class ChatView extends ItemView {
 		try {
 			await this.turn.done;
 		} catch (e) {
-			if (!this.stopping) this.addDiv('claude-error', e instanceof Error ? e.message : String(e));
+			// Launch failures, crashes: show the SDK's message with Claude Code's stderr behind "Details".
+			if (!this.stopping) this.addError(e instanceof Error ? e.message : String(e), { details: e instanceof ClaudeError ? e.details : '', settings: true });
 		} finally {
 			this.endText();
 			for (const cancel of this.pendingPrompts) cancel();
@@ -262,9 +274,39 @@ export class ChatView extends ItemView {
 				this.finishToolRow(block.tool_use_id, !!block.is_error, block.content);
 				void this.editFinished(block.tool_use_id, !!block.is_error);
 			}
-		} else if (m.type === 'result' && m.is_error && !this.stopping) {
-			this.addDiv('claude-error', m.subtype === 'success' ? m.result : m.errors.join('\n'));
 		}
+
+		if (m.type === 'rate_limit_event') {
+			this.resetsAt = m.rate_limit_info.resetsAt ?? this.resetsAt;
+		} else if (m.type === 'assistant' && m.error && !this.errorShown) {
+			// Failures arrive as a synthetic (non-streamed) assistant message carrying an error code.
+			const raw = m.message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+			const { text, settings } = friendlyError(m.error, raw, this.resetsAt);
+			this.addError(text, { details: text === raw ? '' : raw, settings });
+		} else if (m.type === 'result' && m.is_error && !this.stopping && !this.errorShown) {
+			const raw = m.subtype === 'success' ? m.result : m.errors.join('\n');
+			if (m.subtype !== 'success' && m.startup_failure_reason === 'shell_tool_missing') {
+				this.addError('Shell commands need Git for Windows (Git Bash). Install it, or turn off "Allow shell commands" in settings.', { details: raw, settings: true });
+			} else if (m.subtype !== 'success' && m.startup_failure_reason === 'cli_version_too_old') {
+				this.addError('Your Claude Code is too old for this plugin. Run `claude update` in a terminal.', { details: raw });
+			} else {
+				this.addError(raw);
+			}
+		}
+	}
+
+	private addError(text: string, opts: { details?: string; settings?: boolean } = {}) {
+		this.errorShown = true;
+		this.keepPinned(() => {
+			const el = this.chat.messagesEl.createDiv('claude-error');
+			el.createDiv({ text });
+			if (opts.details) {
+				const details = el.createEl('details');
+				details.createEl('summary', { text: 'Details' });
+				details.createEl('pre', { text: opts.details });
+			}
+			if (opts.settings) el.createEl('button', { text: 'Open settings' }).onclick = () => this.plugin.openSettings();
+		});
 	}
 
 	// An existing note opens as soon as Claude starts editing it, so the change lands while you watch
@@ -397,6 +439,31 @@ function describeTool(name: string, input: Record<string, unknown>): string {
 		default:
 			return name;
 	}
+}
+
+function friendlyError(code: SDKAssistantMessageError, raw: string, resetsAt?: number): { text: string; settings?: boolean } {
+	switch (code) {
+		case 'authentication_failed':
+			return { text: 'Claude Code is not logged in. Open a terminal, run `claude`, and use /login. Then send your message again.' };
+		case 'rate_limit':
+			return { text: `You've reached your Claude usage limit.${resetsAt ? ` It resets ${formatReset(resetsAt)}.` : ''}` };
+		case 'billing_error':
+			return { text: "There's a billing problem with your Claude account. Check your plan on claude.ai." };
+		case 'overloaded':
+		case 'server_error':
+			return { text: 'Claude is temporarily unavailable. Try again in a moment.' };
+		case 'model_not_found':
+			return { text: "The selected model isn't available to your account. Choose another model in settings.", settings: true };
+		default:
+			return { text: raw || `Claude Code reported an error (${code}).` };
+	}
+}
+
+function formatReset(unixSeconds: number): string {
+	const d = new Date(unixSeconds * 1000);
+	return d.toDateString() === new Date().toDateString()
+		? `at ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+		: `on ${d.toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit' })}`;
 }
 
 function permissionTitle(tool: string, input: Record<string, unknown>, vault: string): string {

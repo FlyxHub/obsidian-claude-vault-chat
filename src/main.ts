@@ -37,6 +37,13 @@ export default class ClaudeVaultChat extends Plugin {
 		await this.saveData(this.settings);
 	}
 
+	// app.setting isn't in the public API, but it's the only way to open a plugin's settings tab.
+	openSettings() {
+		const setting = (this.app as unknown as { setting?: { open(): void; openTabById(id: string): void } }).setting;
+		setting?.open();
+		setting?.openTabById(this.manifest.id);
+	}
+
 	resetChat() {
 		if (this.chat) this.removeChild(this.chat.component);
 		this.chat = { messagesEl: createDiv('claude-messages'), component: this.addChild(new Component()), allowedTools: new Set() };

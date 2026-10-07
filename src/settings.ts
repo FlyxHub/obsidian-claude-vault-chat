@@ -1,8 +1,12 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, FileSystemAdapter, PluginSettingTab, Setting } from 'obsidian';
+import { describeLogin, findClaude, testConnection } from './claude';
 import type ClaudeVaultChat from './main';
 
 export interface Settings {
 	placed: boolean; // pane was placed under the File Explorer on first run
+	claudePath: string; // '' = auto-detect
+	model: string; // '' = Claude Code's default
+	models: { value: string; displayName: string }[]; // cached by "Test connection"
 	approvalMode: 'ask' | 'auto';
 	allowBash: boolean;
 	allowWeb: boolean;
@@ -11,6 +15,9 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
 	placed: false,
+	claudePath: '',
+	model: '',
+	models: [],
 	approvalMode: 'ask',
 	allowBash: false,
 	allowWeb: false,
@@ -18,6 +25,8 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export class ClaudeSettingTab extends PluginSettingTab {
+	private status = ''; // last "Test connection" result, kept across re-renders
+
 	constructor(
 		app: App,
 		private plugin: ClaudeVaultChat,
@@ -28,8 +37,40 @@ export class ClaudeSettingTab extends PluginSettingTab {
 	display() {
 		const { containerEl, plugin } = this;
 		const s = plugin.settings;
+		const save = () => plugin.saveSettings();
 		containerEl.empty();
 
+		new Setting(containerEl).setHeading().setName('Claude Code');
+		const detected = findClaude();
+		new Setting(containerEl)
+			.setName('Executable')
+			.setDesc(`Path to claude.exe. Leave empty to auto-detect (${detected ? `found ${detected}` : 'not found'}).`)
+			.addText((t) =>
+				t
+					.setPlaceholder(detected ?? 'C:\\Users\\you\\.local\\bin\\claude.exe')
+					.setValue(s.claudePath)
+					.onChange(async (v) => {
+						s.claudePath = v.trim().replace(/^"(.*)"$/, '$1'); // Explorer's "Copy as path" adds quotes
+						await save();
+					}),
+			)
+			.addButton((b) => b.setButtonText('Test connection').onClick(() => this.test(b.buttonEl)));
+		if (this.status) containerEl.createDiv({ cls: 'claude-test-status setting-item-description', text: this.status });
+
+		new Setting(containerEl)
+			.setName('Model')
+			.setDesc(s.models.length ? 'Used from the next message on.' : 'Run "Test connection" to load the models your account can use.')
+			.addDropdown((d) => {
+				d.addOption('', 'Default');
+				for (const m of s.models) if (m.value !== 'default') d.addOption(m.value, m.displayName);
+				if (s.model && !s.models.some((m) => m.value === s.model)) d.addOption(s.model, s.model);
+				d.setValue(s.model).onChange(async (v) => {
+					s.model = v;
+					await save();
+				});
+			});
+
+		new Setting(containerEl).setHeading().setName('Permissions');
 		new Setting(containerEl)
 			.setName('Approval mode')
 			.setDesc('Reading and searching notes never asks. Writes to .obsidian/, .git/ and .claude/, and anything outside the vault, are always blocked.')
@@ -39,10 +80,29 @@ export class ClaudeSettingTab extends PluginSettingTab {
 					.setValue(s.approvalMode)
 					.onChange(async (v) => {
 						s.approvalMode = v as Settings['approvalMode'];
-						await plugin.saveSettings();
+						await save();
 					}),
 			);
+		new Setting(containerEl)
+			.setName('Allow shell commands (Bash)')
+			.setDesc('Always asks first, even with auto-approve. Commands are not confined to the vault. Needs Git for Windows.')
+			.addToggle((t) =>
+				t.setValue(s.allowBash).onChange(async (v) => {
+					s.allowBash = v;
+					await save();
+				}),
+			);
+		new Setting(containerEl)
+			.setName('Allow web access')
+			.setDesc('WebFetch and WebSearch. Always asks first.')
+			.addToggle((t) =>
+				t.setValue(s.allowWeb).onChange(async (v) => {
+					s.allowWeb = v;
+					await save();
+				}),
+			);
 
+		new Setting(containerEl).setHeading().setName('Notes');
 		new Setting(containerEl)
 			.setName('Open notes Claude edits')
 			.setDesc('Shows each note as Claude edits or creates it, without moving your cursor out of the chat.')
@@ -52,28 +112,34 @@ export class ClaudeSettingTab extends PluginSettingTab {
 					.setValue(s.autoOpen)
 					.onChange(async (v) => {
 						s.autoOpen = v as Settings['autoOpen'];
-						await plugin.saveSettings();
+						await save();
 					}),
 			);
+	}
 
-		new Setting(containerEl).setHeading().setName('Extra tools');
-		new Setting(containerEl)
-			.setName('Allow shell commands (Bash)')
-			.setDesc('Always asks first, even with auto-approve. Commands are not confined to the vault.')
-			.addToggle((t) =>
-				t.setValue(s.allowBash).onChange(async (v) => {
-					s.allowBash = v;
-					await plugin.saveSettings();
-				}),
-			);
-		new Setting(containerEl)
-			.setName('Allow web access')
-			.setDesc('WebFetch and WebSearch. Always asks first.')
-			.addToggle((t) =>
-				t.setValue(s.allowWeb).onChange(async (v) => {
-					s.allowWeb = v;
-					await plugin.saveSettings();
-				}),
-			);
+	private async test(button: HTMLButtonElement) {
+		const s = this.plugin.settings;
+		const exe = findClaude(s.claudePath);
+		const adapter = this.app.vault.adapter;
+		if (!exe) {
+			this.status = s.claudePath
+				? `✗ Not usable: ${s.claudePath}. Point this at claude.exe (not a .cmd shim).`
+				: '✗ Claude Code not found. Install it from https://claude.com/claude-code, or enter the path to claude.exe.';
+			return this.display();
+		}
+		button.disabled = true;
+		button.setText('Testing…');
+		try {
+			const info = await testConnection(exe, adapter instanceof FileSystemAdapter ? adapter.getBasePath() : process.cwd());
+			const login = describeLogin(info.account);
+			s.models = info.models.map(({ value, displayName }) => ({ value, displayName }));
+			await this.plugin.saveSettings();
+			this.status = login
+				? `✓ ${info.version} · logged in with ${login}`
+				: `✗ ${info.version} found, but not logged in. Open a terminal, run \`claude\`, and use /login.`;
+		} catch (e) {
+			this.status = `✗ Could not start Claude Code: ${e instanceof Error ? e.message : String(e)}`;
+		}
+		this.display();
 	}
 }
