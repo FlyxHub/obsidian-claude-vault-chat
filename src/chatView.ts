@@ -1,4 +1,4 @@
-import { FileSystemAdapter, ItemView, MarkdownRenderer, setIcon, ViewStateResult, WorkspaceLeaf } from 'obsidian';
+import { FileSystemAdapter, ItemView, MarkdownRenderer, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from 'obsidian';
 import type { PermissionResult, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import fs from 'fs';
 import path from 'path';
@@ -10,6 +10,7 @@ export const VIEW_TYPE = 'claude-vault-chat';
 
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
 const EDIT_TOOLS = new Set(['Edit', 'Write']);
+const OPENABLE = /\.(md|canvas|base)$/i; // file types Obsidian opens itself
 
 type Choice = 'once' | 'chat' | 'deny';
 
@@ -32,6 +33,9 @@ export class ChatView extends ItemView {
 	private textBlock?: TextBlock;
 	private toolRows = new Map<string, HTMLElement>();
 	private pendingPrompts = new Set<() => void>(); // cancel functions of open permission cards
+	private vault = '';
+	private editTargets = new Map<string, string>(); // tool_use id → vault-relative path of an Edit/Write
+	private shownThisTurn = new Set<string>(); // open each edited file once per turn
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -168,6 +172,9 @@ export class ChatView extends ItemView {
 		const chat = this.chat;
 		const s = this.plugin.settings;
 		const vault = adapter.getBasePath();
+		this.vault = vault;
+		this.shownThisTurn.clear();
+		this.editTargets.clear();
 		this.stopping = false;
 		this.turn = runTurn({
 			prompt: text,
@@ -244,15 +251,59 @@ export class ChatView extends ItemView {
 			else if (ev.type === 'content_block_stop') this.endText();
 		} else if (m.type === 'assistant') {
 			for (const block of m.message.content) {
-				if (block.type === 'tool_use') this.addToolRow(block.id, block.name, block.input as Record<string, unknown>);
+				if (block.type !== 'tool_use') continue;
+				const input = block.input as Record<string, unknown>;
+				this.addToolRow(block.id, block.name, input);
+				if (EDIT_TOOLS.has(block.name)) this.trackEdit(block.id, input.file_path);
 			}
 		} else if (m.type === 'user' && Array.isArray(m.message.content)) {
 			for (const block of m.message.content) {
-				if (block.type === 'tool_result') this.finishToolRow(block.tool_use_id, !!block.is_error, block.content);
+				if (block.type !== 'tool_result') continue;
+				this.finishToolRow(block.tool_use_id, !!block.is_error, block.content);
+				void this.editFinished(block.tool_use_id, !!block.is_error);
 			}
 		} else if (m.type === 'result' && m.is_error && !this.stopping) {
 			this.addDiv('claude-error', m.subtype === 'success' ? m.result : m.errors.join('\n'));
 		}
+	}
+
+	// An existing note opens as soon as Claude starts editing it, so the change lands while you watch
+	// (and you can see it while approving). Paths outside the vault resolve to undefined and are ignored.
+	private trackEdit(id: string, filePath: unknown) {
+		const rel = typeof filePath === 'string' ? vaultRelative(filePath, this.vault) : undefined;
+		if (!rel || !OPENABLE.test(rel)) return;
+		this.editTargets.set(id, rel);
+		const file = this.app.vault.getFileByPath(rel);
+		if (file) this.showEdited(file);
+	}
+
+	// A new file opens once its Write succeeded and the vault has picked it up.
+	private async editFinished(id: string, isError: boolean) {
+		const rel = this.editTargets.get(id);
+		this.editTargets.delete(id);
+		if (!rel || isError) return;
+		const file = await this.waitForFile(rel);
+		if (file) this.showEdited(file);
+	}
+
+	private showEdited(file: TFile) {
+		if (this.shownThisTurn.has(file.path)) return;
+		this.shownThisTurn.add(file.path);
+		void this.plugin.showEditedFile(file);
+	}
+
+	private waitForFile(path: string, ms = 5000): Promise<TFile | null> {
+		const existing = this.app.vault.getFileByPath(path);
+		if (existing) return Promise.resolve(existing);
+		return new Promise((resolve) => {
+			const done = (file: TFile | null) => {
+				this.app.vault.offref(ref);
+				window.clearTimeout(timer);
+				resolve(file);
+			};
+			const ref = this.app.vault.on('create', (f) => f instanceof TFile && f.path === path && done(f));
+			const timer = window.setTimeout(() => done(null), ms);
+		});
 	}
 
 	private startText() {

@@ -6,6 +6,7 @@ export interface Settings {
 	approvalMode: 'ask' | 'auto';
 	allowBash: boolean;
 	allowWeb: boolean;
+	autoOpen: 'off' | 'reuse' | 'new';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -13,6 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	approvalMode: 'ask',
 	allowBash: false,
 	allowWeb: false,
+	autoOpen: 'reuse',
 };
 
 export class ClaudeSettingTab extends PluginSettingTab {
@@ -37,6 +39,19 @@ export class ClaudeSettingTab extends PluginSettingTab {
 					.setValue(s.approvalMode)
 					.onChange(async (v) => {
 						s.approvalMode = v as Settings['approvalMode'];
+						await plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Open notes Claude edits')
+			.setDesc('Shows each note as Claude edits or creates it, without moving your cursor out of the chat.')
+			.addDropdown((d) =>
+				d
+					.addOptions({ off: 'Off', reuse: 'Reuse one tab', new: 'New tab each time' })
+					.setValue(s.autoOpen)
+					.onChange(async (v) => {
+						s.autoOpen = v as Settings['autoOpen'];
 						await plugin.saveSettings();
 					}),
 			);

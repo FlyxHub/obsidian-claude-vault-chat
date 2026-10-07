@@ -1,4 +1,4 @@
-import { Component, Notice, Plugin } from 'obsidian';
+import { Component, FileView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import { ChatView, VIEW_TYPE } from './chatView';
 import { ClaudeSettingTab, DEFAULT_SETTINGS, type Settings } from './settings';
 
@@ -13,6 +13,7 @@ export interface ChatState {
 export default class ClaudeVaultChat extends Plugin {
 	settings: Settings = { ...DEFAULT_SETTINGS };
 	chat!: ChatState;
+	private editLeaf?: WorkspaceLeaf; // the dedicated tab for autoOpen: 'reuse'
 
 	async onload() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -39,6 +40,23 @@ export default class ClaudeVaultChat extends Plugin {
 	resetChat() {
 		if (this.chat) this.removeChild(this.chat.component);
 		this.chat = { messagesEl: createDiv('claude-messages'), component: this.addChild(new Component()), allowedTools: new Set() };
+	}
+
+	// Show a note Claude is editing without taking keyboard focus from wherever the user is typing.
+	async showEditedFile(file: TFile) {
+		const mode = this.settings.autoOpen;
+		if (mode === 'off') return;
+		const { workspace } = this.app;
+		let leaf = mode === 'reuse' ? this.editLeaf : undefined;
+		let alive = false;
+		workspace.iterateRootLeaves((l) => (alive ||= l === leaf));
+		if (!leaf || !alive) leaf = workspace.getLeaf('tab'); // 'tab' always lands in the main area
+		if (mode === 'reuse') this.editLeaf = leaf;
+
+		const focused = activeDocument.activeElement as HTMLElement | null;
+		if (!(leaf.view instanceof FileView && leaf.view.file === file)) await leaf.openFile(file, { active: false });
+		await workspace.revealLeaf(leaf);
+		focused?.focus();
 	}
 
 	async openChat() {
