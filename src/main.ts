@@ -35,6 +35,7 @@ export default class ClaudeVaultChat extends Plugin {
 			await leaf.setViewState({ type: VIEW_TYPE });
 		}
 		await workspace.revealLeaf(leaf);
+		if (leaf.view instanceof ChatView) leaf.view.setCollapsed(false);
 	}
 
 	async moveToRight() {
@@ -42,7 +43,8 @@ export default class ClaudeVaultChat extends Plugin {
 		const current = workspace.getLeavesOfType(VIEW_TYPE)[0];
 		if (current?.getRoot() === workspace.rightSplit) return workspace.revealLeaf(current);
 		workspace.detachLeavesOfType(VIEW_TYPE);
-		const leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf('tab');
+		// Own group (split), like on the left, so the header/collapse behave the same.
+		const leaf = workspace.getRightLeaf(true) ?? workspace.getLeaf('tab');
 		await leaf.setViewState({ type: VIEW_TYPE });
 		await workspace.revealLeaf(leaf);
 	}

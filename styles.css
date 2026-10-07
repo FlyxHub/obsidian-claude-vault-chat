@@ -8,7 +8,9 @@
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1);
-	padding: var(--size-4-1) var(--size-4-2);
+	height: var(--header-height);
+	box-sizing: border-box;
+	padding: 0 var(--size-4-2);
 	border-bottom: 1px solid var(--background-modifier-border);
 	flex: 0 0 auto;
 }
@@ -26,9 +28,14 @@
 	overflow-y: auto;
 }
 
-/* Collapsed: the tab group shrinks to its tab strip + our header row. */
+/* When Claude is alone in its tab group, our header row replaces the tab strip. */
+.workspace-tabs:has(.workspace-leaf-content[data-type='claude-vault-chat']):not(:has(.workspace-leaf-content:not([data-type='claude-vault-chat']))) > .workspace-tab-header-container {
+	display: none;
+}
+
+/* Collapsed: pin the group to its visible headers (measured in chatView.ts). */
 .workspace-tabs.claude-collapsed {
-	flex: 0 0 auto !important;
+	flex: 0 0 var(--claude-collapsed-height, var(--header-height)) !important;
 }
 
 .workspace-tabs.claude-collapsed .claude-body {
