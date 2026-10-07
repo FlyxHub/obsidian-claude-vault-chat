@@ -1,28 +1,114 @@
+/*
+ * Claude Vault Chat: the chat pane takes on Claude Desktop's look.
+ * Warm neutrals, serif for Claude's voice, sans for everything else,
+ * and clay reserved for what Claude does (send, the spark).
+ * Follows Obsidian's light/dark mode.
+ */
+
+.claude-chat {
+	--cvc-bg: #faf9f5;
+	--cvc-surface: #ffffff;
+	--cvc-bubble: #f0eee6;
+	--cvc-code: #f0eee6;
+	--cvc-text: #1f1e1d;
+	--cvc-text-2: #5e5d59;
+	--cvc-text-3: #8f8d85;
+	--cvc-border: rgba(31, 30, 29, 0.12);
+	--cvc-border-strong: rgba(31, 30, 29, 0.24);
+	--cvc-hover: rgba(31, 30, 29, 0.05);
+	--cvc-clay: #c96442;
+	--cvc-clay-hover: #b0563a;
+	--cvc-spark: #d97757;
+	--cvc-danger: #a8402f;
+	--cvc-danger-bg: rgba(168, 64, 47, 0.07);
+	--cvc-add-bg: rgba(56, 128, 64, 0.11);
+	--cvc-del-bg: rgba(168, 64, 47, 0.1);
+	--cvc-focus: #2c84db;
+	--cvc-shadow: 0 1px 2px rgba(31, 30, 29, 0.04), 0 4px 18px rgba(31, 30, 29, 0.06);
+	--cvc-serif: Charter, 'Iowan Old Style', Georgia, serif; /* Anthropic's own faces aren't licensed for bundling */
+
+	/* Point Obsidian's own variables at the palette so rendered markdown matches. */
+	--text-normal: var(--cvc-text);
+	--text-muted: var(--cvc-text-2);
+	--text-faint: var(--cvc-text-3);
+	--background-primary: var(--cvc-bg);
+	--background-primary-alt: var(--cvc-code);
+	--background-secondary: var(--cvc-bubble);
+	--background-modifier-border: var(--cvc-border);
+	--background-modifier-hover: var(--cvc-hover);
+	--code-background: var(--cvc-code);
+	--code-normal: var(--cvc-text);
+	--link-color: var(--cvc-text);
+	--link-color-hover: var(--cvc-clay);
+	--link-external-color: var(--cvc-text);
+	--link-external-color-hover: var(--cvc-clay);
+	--link-unresolved-color: var(--cvc-text-2);
+	--link-decoration: underline;
+	--link-external-decoration: underline;
+	--icon-color: var(--cvc-text-2);
+	--icon-color-hover: var(--cvc-text);
+
+	background: var(--cvc-bg);
+	color: var(--cvc-text);
+}
+
+.theme-dark .claude-chat {
+	--cvc-bg: #262624;
+	--cvc-surface: #30302e;
+	--cvc-bubble: #141413;
+	--cvc-code: #1f1e1d;
+	--cvc-text: #f5f4ee;
+	--cvc-text-2: #c2c0b6;
+	--cvc-text-3: #8f8d85;
+	--cvc-border: rgba(222, 220, 209, 0.12);
+	--cvc-border-strong: rgba(222, 220, 209, 0.24);
+	--cvc-hover: rgba(255, 255, 255, 0.05);
+	--cvc-clay-hover: #d97757;
+	--cvc-danger: #ec8a79;
+	--cvc-danger-bg: rgba(236, 138, 121, 0.1);
+	--cvc-add-bg: rgba(110, 190, 115, 0.14);
+	--cvc-del-bg: rgba(236, 138, 121, 0.14);
+	--cvc-focus: #5ba4e8;
+	--cvc-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+
 .claude-chat.view-content {
 	padding: 0;
 	display: flex;
 	flex-direction: column;
+	overflow: hidden;
+	font-family: var(--font-interface);
 }
 
+.claude-chat :is(.claude-chip, .claude-send, .claude-btn, .claude-copy, summary):focus-visible {
+	outline: 2px solid var(--cvc-focus);
+	outline-offset: 1px;
+	box-shadow: none;
+}
+
+/* Header: the chat's title, like the top of a Claude conversation */
+
 .claude-header {
+	flex: none;
 	display: flex;
 	align-items: center;
-	gap: var(--size-4-1);
+	gap: 2px;
 	height: var(--header-height);
 	box-sizing: border-box;
-	padding: 0 var(--size-4-2);
-	border-bottom: 1px solid var(--background-modifier-border);
-	flex: 0 0 auto;
+	padding: 0 6px;
+	border-bottom: 1px solid var(--cvc-border);
 }
 
 .claude-title {
-	font-size: var(--font-ui-small);
-	font-weight: var(--font-semibold);
-	color: var(--text-muted);
-}
-
-.claude-new-chat {
-	margin-left: auto;
+	flex: 1;
+	min-width: 0;
+	padding: 0 4px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--cvc-text);
 }
 
 .claude-header .clickable-icon.is-disabled {
@@ -30,167 +116,685 @@
 	pointer-events: none;
 }
 
-.claude-notice {
-	color: var(--text-faint);
-	font-style: italic;
-}
+/* Messages */
 
 .claude-messages {
 	flex: 1 1 auto;
+	min-height: 0;
 	overflow-y: auto;
-	padding: var(--size-4-2);
+	padding: 20px 16px 12px;
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-2);
+	gap: 18px;
 	user-select: text;
-	font-size: var(--font-ui-small);
 }
 
-.claude-messages:empty::before {
-	content: 'Ask Claude about the notes in this vault.';
-	color: var(--text-faint);
+.claude-messages:empty {
+	display: none;
 }
 
 .claude-user {
 	align-self: flex-end;
-	max-width: 90%;
-	padding: var(--size-4-1) var(--size-4-2);
-	border-radius: var(--radius-m);
-	background: var(--background-modifier-hover);
+	max-width: 85%;
+	padding: 8px 14px;
+	border-radius: 18px;
+	background: var(--cvc-bubble);
+	font-size: 14px;
+	line-height: 1.5;
 	white-space: pre-wrap;
+	overflow-wrap: anywhere;
 }
 
-.claude-assistant > :first-child {
+.claude-turn {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+/* Claude's replies: serif, unboxed */
+
+.claude-chat .claude-reply {
+	font-family: var(--cvc-serif);
+	font-size: 15px;
+	line-height: 1.65;
+	color: var(--cvc-text);
+	overflow-wrap: anywhere;
+	padding: 0;
+}
+
+.claude-reply > :first-child {
 	margin-top: 0;
 }
 
-.claude-assistant > :last-child {
+.claude-reply > :last-child {
 	margin-bottom: 0;
 }
 
-.claude-tool {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
+.claude-chat .claude-reply p {
+	margin: 0 0 0.8em;
 }
 
-.claude-tool > summary {
+.claude-chat .claude-reply :is(h1, h2, h3, h4, h5, h6) {
+	font-family: var(--cvc-serif);
+	font-weight: 600;
+	line-height: 1.3;
+	letter-spacing: normal;
+	color: var(--cvc-text);
+	margin: 1.2em 0 0.45em;
+}
+
+.claude-chat .claude-reply h1 {
+	font-size: 1.3em;
+}
+
+.claude-chat .claude-reply h2 {
+	font-size: 1.17em;
+}
+
+.claude-chat .claude-reply :is(h3, h4, h5, h6) {
+	font-size: 1.04em;
+}
+
+.claude-chat .claude-reply :is(ul, ol) {
+	margin: 0 0 0.8em;
+	padding-inline-start: 1.35em;
+}
+
+.claude-chat .claude-reply li {
+	margin: 0.25em 0;
+}
+
+.claude-chat .claude-reply strong {
+	font-weight: 600;
+}
+
+.claude-chat .claude-reply a {
+	text-underline-offset: 2px;
+	text-decoration-thickness: 1px;
+}
+
+.claude-chat .claude-reply code {
+	font-family: var(--font-monospace);
+	font-size: 0.84em;
+	padding: 0.12em 0.35em;
+	border-radius: 5px;
+	background: var(--cvc-code);
+}
+
+.claude-chat .claude-reply pre {
+	margin: 0 0 0.8em;
+	padding: 12px 14px;
+	border-radius: 10px;
+	background: var(--cvc-code);
+	font-size: 12.5px;
+	line-height: 1.55;
+	overflow-x: auto;
+}
+
+.claude-chat .claude-reply pre code {
+	padding: 0;
+	background: none;
+	font-size: inherit;
+}
+
+.claude-chat .claude-reply blockquote {
+	margin: 0 0 0.8em;
+	padding-left: 12px;
+	border-left: 2px solid var(--cvc-border-strong);
+	color: var(--cvc-text-2);
+}
+
+.claude-chat .claude-reply table {
+	border-collapse: collapse;
+	margin: 0 0 0.8em;
+	font-family: var(--font-interface);
+	font-size: 13px;
+	line-height: 1.45;
+}
+
+.claude-chat .claude-reply :is(th, td) {
+	padding: 5px 10px;
+	border: 1px solid var(--cvc-border);
+}
+
+.claude-chat .claude-reply th {
+	font-weight: 600;
+	background: var(--cvc-hover);
+}
+
+.claude-chat .claude-reply hr {
+	margin: 1.2em 0;
+	border: none;
+	border-top: 1px solid var(--cvc-border);
+}
+
+/* Tool activity: quiet one-line rows, details on demand */
+
+.claude-tool {
+	font-size: 13px;
+	line-height: 1.4;
+	color: var(--cvc-text-2);
+}
+
+.claude-tool + .claude-tool {
+	margin-top: -6px;
+}
+
+.claude-tool summary {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	width: fit-content;
+	max-width: 100%;
+	box-sizing: border-box;
+	margin: 0 -6px;
+	padding: 3px 6px;
+	border-radius: 6px;
+	list-style: none;
 	cursor: pointer;
 }
 
-.claude-tool.is-error > summary,
-.claude-error {
-	color: var(--text-error);
+.claude-tool summary::-webkit-details-marker {
+	display: none;
 }
 
-.claude-tool pre {
-	margin: var(--size-4-1) 0;
-	max-height: 200px;
-	overflow: auto;
-	white-space: pre-wrap;
-	word-break: break-all;
-	font-size: var(--font-ui-smaller);
+.claude-tool summary:hover {
+	background: var(--cvc-hover);
+	color: var(--cvc-text);
 }
 
-.claude-error {
-	white-space: pre-wrap;
+.claude-tool :is(.claude-tool-icon, .claude-tool-chevron) {
 	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: var(--size-4-1);
+	flex: none;
 }
 
+.claude-tool :is(.claude-tool-icon, .claude-tool-chevron) svg {
+	width: 14px;
+	height: 14px;
+}
+
+.claude-tool-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.claude-tool-chevron {
+	opacity: 0;
+	transition: opacity 120ms, transform 120ms;
+}
+
+.claude-tool summary:hover .claude-tool-chevron,
+.claude-tool details[open] .claude-tool-chevron {
+	opacity: 1;
+}
+
+.claude-tool details[open] .claude-tool-chevron {
+	transform: rotate(90deg);
+}
+
+.claude-tool pre,
+.claude-permission pre,
 .claude-error pre {
 	margin: 0;
-	max-height: 160px;
+	padding: 8px 10px;
+	max-height: 180px;
 	overflow: auto;
+	border-radius: 8px;
+	background: var(--cvc-code);
+	font-family: var(--font-monospace);
+	font-size: 11.5px;
+	line-height: 1.5;
 	white-space: pre-wrap;
-	word-break: break-word;
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
+	overflow-wrap: anywhere;
+	color: var(--cvc-text-2);
 }
 
-.claude-error > details > summary {
-	cursor: pointer;
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
+.claude-tool details pre {
+	margin: 4px 0 2px 21px;
 }
 
-.claude-test-status {
-	padding: 0 0 var(--size-4-2);
-	white-space: pre-wrap;
+.claude-tool.is-error summary {
+	color: var(--cvc-danger);
 }
+
+.claude-tool-reason {
+	margin: 1px 0 0 21px;
+	font-size: 12px;
+	color: var(--cvc-danger);
+}
+
+/* "Thinking…" shimmer, used while a step is in progress */
+
+.claude-tool.is-running .claude-tool-label,
+.claude-spark.is-working .claude-spark-label {
+	background: linear-gradient(90deg, var(--cvc-text-3) 0%, var(--cvc-text-3) 35%, var(--cvc-text) 50%, var(--cvc-text-3) 65%, var(--cvc-text-3) 100%);
+	background-size: 250% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation: claude-shimmer 2.2s linear infinite;
+}
+
+@keyframes claude-shimmer {
+	from {
+		background-position: 100% 0;
+	}
+	to {
+		background-position: -150% 0;
+	}
+}
+
+/* The spark: animates while Claude works, then rests under the latest reply */
+
+.claude-spark {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 24px;
+	font-size: 13px;
+	color: var(--cvc-text-2);
+}
+
+/* Dingbat asterisks; \FE0E and font-variant-emoji stop Windows drawing ✳ as a green emoji. */
+.claude-spark-glyph,
+.claude-empty-mark {
+	font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', 'DejaVu Sans', sans-serif;
+	font-variant-emoji: text;
+	color: var(--cvc-spark);
+	line-height: 1;
+}
+
+.claude-spark-glyph {
+	width: 20px;
+	text-align: center;
+	font-size: 19px;
+}
+
+.claude-spark-glyph::before {
+	content: '\273B\FE0E';
+}
+
+/* Claude Code's spinner glyphs, there and back */
+.claude-spark.is-working .claude-spark-glyph::before {
+	animation: claude-spin 1.2s steps(1, end) infinite;
+}
+
+@keyframes claude-spin {
+	0% { content: '\00B7'; }
+	10% { content: '\2722\FE0E'; }
+	20% { content: '\2733\FE0E'; }
+	30% { content: '\2736\FE0E'; }
+	40% { content: '\273B\FE0E'; }
+	50% { content: '\273D\FE0E'; }
+	60% { content: '\273B\FE0E'; }
+	70% { content: '\2736\FE0E'; }
+	80% { content: '\2733\FE0E'; }
+	90% { content: '\2722\FE0E'; }
+}
+
+.claude-spark-label {
+	display: none;
+}
+
+.claude-spark.is-working:not(.is-quiet) .claude-spark-label {
+	display: inline;
+}
+
+.claude-turn-footer {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 28px;
+	margin-top: -2px;
+}
+
+.claude-chat .claude-copy {
+	padding: 4px;
+	color: var(--cvc-text-3);
+}
+
+.claude-chat .claude-copy svg {
+	width: 15px;
+	height: 15px;
+}
+
+.claude-notice {
+	font-size: 12.5px;
+	color: var(--cvc-text-3);
+}
+
+/* Permission requests */
 
 .claude-permission {
-	border: 1px solid var(--interactive-accent);
-	border-radius: var(--radius-m);
-	padding: var(--size-4-2);
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-1);
-}
-
-.claude-permission.is-allowed,
-.claude-permission.is-denied {
-	border-color: var(--background-modifier-border);
+	gap: 8px;
+	padding: 12px 14px;
+	border: 1px solid var(--cvc-border);
+	border-radius: 14px;
+	background: var(--cvc-surface);
+	box-shadow: var(--cvc-shadow);
 }
 
 .claude-permission-title {
-	font-weight: var(--font-semibold);
-	word-break: break-word;
-}
-
-.claude-permission pre {
-	margin: 0;
-	max-height: 160px;
-	overflow: auto;
-	white-space: pre-wrap;
-	word-break: break-word;
-	font-size: var(--font-ui-smaller);
-	padding: var(--size-4-1);
-	border-radius: var(--radius-s);
-	background: var(--background-primary-alt);
+	font-size: 13.5px;
+	font-weight: 600;
+	line-height: 1.4;
+	color: var(--cvc-text);
+	overflow-wrap: anywhere;
 }
 
 .claude-permission .claude-diff-del {
-	background: rgba(var(--color-red-rgb), 0.15);
+	background: var(--cvc-del-bg);
+	color: var(--cvc-text);
 }
 
 .claude-permission .claude-diff-add {
-	background: rgba(var(--color-green-rgb), 0.15);
+	background: var(--cvc-add-bg);
+	color: var(--cvc-text);
 }
 
-.claude-permission-note,
-.claude-permission-outcome {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
-}
-
-.claude-permission.is-denied .claude-permission-outcome {
-	color: var(--text-error);
+.claude-permission-note {
+	font-size: 12px;
+	color: var(--cvc-text-2);
 }
 
 .claude-permission-buttons {
 	display: flex;
 	flex-wrap: wrap;
-	gap: var(--size-4-1);
+	gap: 4px;
+	margin-top: 2px;
 }
+
+/* Fill each row, so a narrow sidebar wraps into tidy full-width rows. */
+.claude-permission-buttons .claude-btn {
+	flex: 1 1 auto;
+}
+
+.claude-permission.is-decided {
+	gap: 6px;
+	padding: 8px 12px;
+	background: transparent;
+	box-shadow: none;
+}
+
+.claude-permission.is-decided pre {
+	max-height: 64px;
+}
+
+.claude-permission-outcome {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--cvc-text-2);
+}
+
+.claude-permission-outcome svg {
+	width: 13px;
+	height: 13px;
+}
+
+.claude-permission.is-denied .claude-permission-outcome {
+	color: var(--cvc-danger);
+}
+
+/* Buttons: neutral for the user's choices; clay stays Claude's */
+
+.claude-chat .claude-btn {
+	height: 30px;
+	padding: 0 9px;
+	border: 1px solid var(--cvc-border-strong);
+	border-radius: 8px;
+	background: transparent;
+	box-shadow: none;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--cvc-text);
+	cursor: pointer;
+}
+
+.claude-chat .claude-btn:hover {
+	background: var(--cvc-hover);
+}
+
+.claude-chat .claude-btn.mod-primary {
+	border-color: transparent;
+	background: var(--cvc-text);
+	color: var(--cvc-bg);
+}
+
+.claude-chat .claude-btn.mod-primary:hover {
+	opacity: 0.88;
+}
+
+.claude-chat .claude-btn.mod-quiet {
+	border-color: transparent;
+	color: var(--cvc-text-2);
+}
+
+/* Errors */
+
+.claude-error {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 10px 12px;
+	border-radius: 12px;
+	background: var(--cvc-danger-bg);
+	font-size: 13px;
+	line-height: 1.45;
+	color: var(--cvc-danger);
+	white-space: pre-wrap;
+}
+
+.claude-error details {
+	align-self: stretch;
+}
+
+.claude-error summary {
+	cursor: pointer;
+	font-size: 12px;
+	color: var(--cvc-text-2);
+}
+
+.claude-error details pre {
+	margin-top: 6px;
+}
+
+/* Empty chat: Claude's greeting */
+
+.claude-empty {
+	flex: 1 1 auto;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	padding: 24px 16px;
+}
+
+.claude-messages:not(:empty) + .claude-empty {
+	display: none;
+}
+
+.claude-empty-mark {
+	font-size: 30px;
+}
+
+.claude-greeting {
+	font-family: var(--cvc-serif);
+	font-size: 27px;
+	font-weight: 400;
+	line-height: 1.15;
+	letter-spacing: -0.01em;
+	color: var(--cvc-text);
+}
+
+/* Composer */
 
 .claude-composer {
-	flex: 0 0 auto;
-	display: flex;
-	align-items: flex-end;
-	gap: var(--size-4-2);
-	padding: var(--size-4-2);
-	border-top: 1px solid var(--background-modifier-border);
+	flex: none;
+	padding: 6px 12px 12px;
 }
 
-.claude-composer textarea {
-	flex: 1 1 auto;
-	min-height: 3em;
-	max-height: 40vh;
-	resize: vertical;
-	font-size: var(--font-ui-small);
+.claude-input-card {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px 8px 8px 14px;
+	border: 1px solid var(--cvc-border);
+	border-radius: 18px;
+	background: var(--cvc-surface);
+	box-shadow: var(--cvc-shadow);
+	cursor: text;
+	transition: border-color 150ms;
 }
+
+.claude-input-card:focus-within {
+	border-color: var(--cvc-border-strong);
+}
+
+.claude-chat .claude-input-card textarea,
+.claude-chat .claude-input-card textarea:focus,
+.claude-chat .claude-input-card textarea:hover {
+	width: 100%;
+	min-height: 21px;
+	max-height: 240px;
+	margin: 0;
+	padding: 0 6px 0 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	outline: none;
+	resize: none;
+	font-family: var(--font-interface);
+	font-size: 14px;
+	line-height: 1.5;
+	color: var(--cvc-text);
+}
+
+.claude-chat .claude-input-card textarea::placeholder {
+	color: var(--cvc-text-3);
+}
+
+.claude-input-bar {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	margin-left: -6px;
+}
+
+.claude-chat .claude-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	min-width: 0;
+	height: 28px;
+	padding: 0 6px 0 8px;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	box-shadow: none;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--cvc-text-2);
+	cursor: pointer;
+}
+
+.claude-chat .claude-chip:hover {
+	background: var(--cvc-hover);
+	color: var(--cvc-text);
+}
+
+.claude-chip-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.claude-chip-chevron {
+	display: flex;
+	flex: none;
+}
+
+.claude-chip-chevron svg {
+	width: 12px;
+	height: 12px;
+}
+
+.claude-chat .claude-model-chip {
+	margin-left: auto;
+}
+
+.claude-chat .claude-send {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	margin-left: 2px;
+	padding: 0;
+	border: none;
+	border-radius: 10px;
+	background: var(--cvc-clay);
+	box-shadow: none;
+	color: #fff;
+	cursor: pointer;
+	transition: background-color 120ms, opacity 120ms;
+}
+
+.claude-chat .claude-send:hover {
+	background: var(--cvc-clay-hover);
+}
+
+.claude-chat .claude-send svg {
+	width: 16px;
+	height: 16px;
+	stroke-width: 2.5px;
+}
+
+.claude-chat .claude-send.is-empty {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.claude-chat .claude-send.is-stop {
+	background: var(--cvc-text);
+	color: var(--cvc-bg);
+}
+
+.claude-chat .claude-send.is-stop svg {
+	width: 12px;
+	height: 12px;
+	fill: currentColor;
+}
+
+.claude-chat .claude-send.is-stopping {
+	opacity: 0.45;
+	pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.claude-tool.is-running .claude-tool-label,
+	.claude-spark.is-working .claude-spark-label,
+	.claude-spark.is-working .claude-spark-glyph::before {
+		animation: none;
+	}
+
+	.claude-tool.is-running .claude-tool-label,
+	.claude-spark.is-working .claude-spark-label {
+		color: var(--cvc-text-2);
+		background: none;
+	}
+}
+
+/* Sidebar integration */
 
 /* When Claude is alone in its tab group, our header row replaces the tab strip. */
 .workspace-tabs:has(.workspace-leaf-content[data-type='claude-vault-chat']):not(:has(.workspace-leaf-content:not([data-type='claude-vault-chat']))) > .workspace-tab-header-container {

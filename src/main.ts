@@ -1,10 +1,15 @@
-import { Component, FileView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { addIcon, Component, FileSystemAdapter, FileView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import { ChatView, VIEW_TYPE } from './chatView';
+import { describeLogin, findClaude, testConnection } from './claude';
 import { ClaudeSettingTab, DEFAULT_SETTINGS, type Settings } from './settings';
+
+// Our own eight-spoke asterisk (echoing the ✻ glyph in the chat), not Anthropic's logo.
+const SPARK_ICON = '<path d="M50 12v76M12 50h76M23 23l54 54M77 23L23 77" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>';
 
 // The conversation lives on the plugin, not the pane, so moving or reopening the pane keeps it.
 export interface ChatState {
 	sessionId?: string;
+	title?: string; // first line of the first message
 	messagesEl: HTMLElement;
 	component: Component; // owns rendered markdown children; unloaded on New Chat
 	allowedTools: Set<string>; // "Allow for this chat"
@@ -19,8 +24,9 @@ export default class ClaudeVaultChat extends Plugin {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 		this.addSettingTab(new ClaudeSettingTab(this.app, this));
 		this.resetChat();
+		addIcon('claude-spark', SPARK_ICON);
 		this.registerView(VIEW_TYPE, (leaf) => new ChatView(leaf, this));
-		this.addRibbonIcon('bot', 'Open Claude', () => this.openChat());
+		this.addRibbonIcon('claude-spark', 'Open Claude', () => this.openChat());
 		this.addCommand({ id: 'open', name: 'Open or focus chat', callback: () => this.openChat() });
 		this.addCommand({ id: 'move-to-right-sidebar', name: 'Move chat to right sidebar', callback: () => this.moveToRight() });
 
@@ -35,6 +41,29 @@ export default class ClaudeVaultChat extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		// The composer's approval-mode and model menus mirror these settings.
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) if (leaf.view instanceof ChatView) leaf.view.refreshComposer();
+	}
+
+	/** Starts Claude Code to check its login and refresh the model list; returns a one-line status. */
+	async checkConnection(): Promise<string> {
+		const s = this.settings;
+		const exe = findClaude(s.claudePath);
+		if (!exe) {
+			return s.claudePath
+				? `✗ Not usable: ${s.claudePath}. Point this at claude.exe (not a .cmd shim).`
+				: '✗ Claude Code not found. Install it from https://claude.com/claude-code, or enter the path to claude.exe.';
+		}
+		const adapter = this.app.vault.adapter;
+		try {
+			const info = await testConnection(exe, adapter instanceof FileSystemAdapter ? adapter.getBasePath() : process.cwd());
+			s.models = info.models.map(({ value, displayName }) => ({ value, displayName }));
+			await this.saveSettings();
+			const login = describeLogin(info.account);
+			return login ? `✓ ${info.version} · logged in with ${login}` : `✗ ${info.version} found, but not logged in. Open a terminal, run \`claude\`, and use /login.`;
+		} catch (e) {
+			return `✗ Could not start Claude Code: ${e instanceof Error ? e.message : String(e)}`;
+		}
 	}
 
 	// app.setting isn't in the public API, but it's the only way to open a plugin's settings tab.

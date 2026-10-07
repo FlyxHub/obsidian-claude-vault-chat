@@ -23,9 +23,10 @@ Copy `main.js`, `manifest.json` and `styles.css` into `<your vault>/.obsidian/pl
 
 - **The pane** opens on first run in the left sidebar, stacked under the File Explorer. The chevron in its header collapses it to a single row. Drag the divider above it to resize.
 - **Commands** (Ctrl+P): *Open or focus chat* (also the ribbon's bot icon) and *Move chat to right sidebar*. To move it back, close the pane and click the ribbon icon.
-- **Chatting:** Enter sends and Shift+Enter adds a new line. **Stop** interrupts a reply and keeps the conversation, and the pen icon starts a **New chat**. A conversation lasts until New chat. It isn't restored after restarting Obsidian.
+- **Chatting:** the pane looks and works like a Claude Desktop chat. Enter sends and Shift+Enter adds a new line. While Claude works, the send button becomes **Stop**, which interrupts the reply and keeps the conversation. The pen icon in the header starts a **New chat**. A conversation lasts until New chat. It isn't restored after restarting Obsidian.
+- **Below the message box:** the left menu switches the approval mode, and the right menu picks the model. Choose *Load available models* the first time. Copy a reply with the icon under it.
 - **Tool activity** shows as compact rows, such as "Reading Onboarding.md". Click a row to see the details. `[[Links]]` in replies are clickable.
-- **Approvals:** before an edit, an inline card offers **Allow**, **Allow for this chat** (that tool, until New chat) or **Deny**. Edit cards show the old text in red and the new text in green.
+- **Approvals:** before an edit, an inline card offers **Allow once**, **Allow for this chat** (that tool, until New chat) or **Deny**. Edit cards show the old text in red and the new text in green.
 - **Auto-open:** the note Claude is editing opens in one reused tab, and your cursor stays in the chat. To have the File Explorer expand folders and scroll to that note, turn on the explorer's own **Auto-reveal current file** button in its header.
 
 ## Settings
@@ -33,8 +34,8 @@ Copy `main.js`, `manifest.json` and `styles.css` into `<your vault>/.obsidian/pl
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Executable | auto-detect | Path to `claude.exe`. Auto-detect checks `~\.local\bin\claude.exe`, then `where claude`. `.cmd` shims can't be used. **Test connection** shows the version, login and models, without using any of your usage. |
-| Model | Default | The list comes from Test connection. Takes effect from the next message. |
-| Approval mode | Ask before edits | *Auto-approve edits* skips the cards for Edit/Write. The vault boundary still applies. |
+| Model | Default | Also in the menu below the message box. The list comes from Test connection. Takes effect from the next message. |
+| Approval mode | Ask before edits | Also in the menu below the message box. *Auto-approve edits* skips the cards for Edit/Write. The vault boundary still applies. |
 | Allow shell commands (Bash) | Off | Always asks, even with auto-approve. |
 | Allow web access | Off | WebFetch and WebSearch. Always asks. |
 | Open notes Claude edits | Reuse one tab | Or *New tab each time*, or *Off*. |

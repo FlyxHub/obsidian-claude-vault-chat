@@ -1,9 +1,10 @@
-import { FileSystemAdapter, ItemView, MarkdownRenderer, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from 'obsidian';
+import { FileSystemAdapter, ItemView, MarkdownRenderer, Menu, Notice, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from 'obsidian';
 import type { PermissionResult, SDKAssistantMessageError, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import fs from 'fs';
 import path from 'path';
 import { ClaudeError, findClaude, runTurn, type Turn } from './claude';
 import type ClaudeVaultChat from './main';
+import type { Settings } from './settings';
 import { vaultRelative } from './vaultPath';
 
 export const VIEW_TYPE = 'claude-vault-chat';
@@ -11,6 +12,17 @@ export const VIEW_TYPE = 'claude-vault-chat';
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
 const EDIT_TOOLS = new Set(['Edit', 'Write']);
 const OPENABLE = /\.(md|canvas|base)$/i; // file types Obsidian opens itself
+const TOOL_ICONS: Record<string, string> = {
+	Read: 'file-text',
+	Glob: 'folder-search',
+	Grep: 'text-search',
+	Edit: 'pencil',
+	Write: 'file-plus',
+	Bash: 'terminal',
+	WebFetch: 'globe',
+	WebSearch: 'search',
+};
+const APPROVAL_MODES: Record<Settings['approvalMode'], string> = { ask: 'Ask before edits', auto: 'Auto-approve edits' };
 
 type Choice = 'once' | 'chat' | 'deny';
 
@@ -25,13 +37,19 @@ export class ChatView extends ItemView {
 	private collapsed = false;
 	private headerEl?: HTMLElement;
 	private toggleEl?: HTMLElement;
+	private titleEl!: HTMLElement;
 	private newChatEl!: HTMLElement;
+	private greetingEl!: HTMLElement;
 	private inputEl!: HTMLTextAreaElement;
+	private modeEl!: HTMLElement;
+	private modelEl!: HTMLElement;
 	private sendEl!: HTMLButtonElement;
 	private turn?: Turn;
+	private turnEl?: HTMLElement; // everything Claude produced for the current message
+	private turnText: string[] = []; // finished text blocks of the current turn, for Copy
 	private stopping = false;
 	private textBlock?: TextBlock;
-	private toolRows = new Map<string, HTMLElement>();
+	private toolRows = new Map<string, { row: HTMLElement; done: string }>();
 	private pendingPrompts = new Set<() => void>(); // cancel functions of open permission cards
 	private vault = '';
 	private editTargets = new Map<string, string>(); // tool_use id → vault-relative path of an Edit/Write
@@ -55,7 +73,7 @@ export class ChatView extends ItemView {
 	}
 
 	getIcon() {
-		return 'bot';
+		return 'claude-spark';
 	}
 
 	private get chat() {
@@ -68,12 +86,17 @@ export class ChatView extends ItemView {
 		this.headerEl = this.contentEl.createDiv('claude-header');
 		this.toggleEl = this.headerEl.createDiv('clickable-icon');
 		this.toggleEl.onclick = () => this.setCollapsed(!this.collapsed);
-		this.headerEl.createSpan({ cls: 'claude-title', text: 'Claude' });
+		this.titleEl = this.headerEl.createDiv('claude-title');
 		this.newChatEl = this.headerEl.createDiv({ cls: 'clickable-icon claude-new-chat', attr: { 'aria-label': 'New chat' } });
 		setIcon(this.newChatEl, 'square-pen');
 		this.newChatEl.onclick = () => this.newChat();
 
 		this.contentEl.appendChild(this.chat.messagesEl);
+		// Shown instead of the (empty) message list, like Claude's home screen.
+		const empty = this.contentEl.createDiv('claude-empty');
+		empty.createSpan({ cls: 'claude-empty-mark', text: '✻︎', attr: { 'aria-hidden': 'true' } });
+		this.greetingEl = empty.createSpan('claude-greeting');
+
 		// Rendered [[wikilinks]] aren't clickable outside a note view; open them ourselves.
 		this.registerDomEvent(this.contentEl, 'click', (e) => {
 			const link = (e.target as HTMLElement).closest('a.internal-link');
@@ -82,16 +105,22 @@ export class ChatView extends ItemView {
 			void this.app.workspace.openLinkText(link.getAttr('data-href') ?? link.getText(), '', e.ctrlKey || e.metaKey);
 		});
 
-		const composer = this.contentEl.createDiv('claude-composer');
-		this.inputEl = composer.createEl('textarea', { attr: { placeholder: 'Ask Claude about this vault…', rows: '3' } });
+		const card = this.contentEl.createDiv('claude-composer').createDiv('claude-input-card');
+		card.onclick = (e) => !(e.target as HTMLElement).closest('button') && this.inputEl.focus();
+		this.inputEl = card.createEl('textarea', { attr: { rows: '1', 'aria-label': 'Message Claude' } });
 		this.inputEl.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
 				void this.send();
 			}
 		});
-		this.sendEl = composer.createEl('button');
+		this.inputEl.addEventListener('input', () => this.refreshComposer());
+		const bar = card.createDiv('claude-input-bar');
+		this.modeEl = this.chip(bar, 'claude-mode-chip', (e) => this.showModeMenu(e));
+		this.modelEl = this.chip(bar, 'claude-model-chip', (e) => this.showModelMenu(e));
+		this.sendEl = bar.createEl('button', { cls: 'claude-send' });
 		this.sendEl.onclick = () => (this.turn ? this.stop() : void this.send());
+
 		this.setBusy(false);
 		this.setCollapsed(this.collapsed);
 	}
@@ -140,52 +169,119 @@ export class ChatView extends ItemView {
 		this.app.workspace.requestSaveLayout();
 	}
 
+	/** Re-reads title, settings-backed chips, placeholder and send state. */
+	refreshComposer() {
+		const s = this.plugin.settings;
+		this.titleEl.setText(this.chat.title ?? 'New chat');
+		const hour = new Date().getHours();
+		this.greetingEl.setText(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
+		this.inputEl.placeholder = this.chat.messagesEl.childElementCount ? 'Reply to Claude…' : 'How can I help you today?';
+		this.chipLabel(this.modeEl, APPROVAL_MODES[s.approvalMode]);
+		this.chipLabel(this.modelEl, s.models.find((m) => m.value === s.model)?.displayName ?? (s.model || 'Default'));
+		this.sendEl.toggleClass('is-empty', !this.turn && !this.inputEl.value.trim());
+		// Grow with the text, like Claude's composer, up to a cap.
+		this.inputEl.style.height = 'auto';
+		this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 240)}px`;
+	}
+
+	private chip(parent: HTMLElement, cls: string, onClick: (e: MouseEvent) => void) {
+		const el = parent.createEl('button', { cls: `claude-chip ${cls}` });
+		el.createSpan('claude-chip-label');
+		setIcon(el.createSpan('claude-chip-chevron'), 'chevron-down');
+		el.onclick = onClick;
+		return el;
+	}
+
+	private chipLabel(chip: HTMLElement, text: string) {
+		chip.querySelector('.claude-chip-label')?.setText(text);
+		chip.setAttr('aria-label', text);
+	}
+
+	private showModeMenu(e: MouseEvent) {
+		const s = this.plugin.settings;
+		const menu = new Menu();
+		for (const [mode, title] of Object.entries(APPROVAL_MODES) as [Settings['approvalMode'], string][]) {
+			menu.addItem((i) =>
+				i
+					.setTitle(title)
+					.setChecked(s.approvalMode === mode)
+					.onClick(async () => {
+						s.approvalMode = mode;
+						await this.plugin.saveSettings();
+					}),
+			);
+		}
+		menu.showAtMouseEvent(e);
+	}
+
+	private showModelMenu(e: MouseEvent) {
+		const s = this.plugin.settings;
+		const pick = async (model: string) => {
+			s.model = model;
+			await this.plugin.saveSettings();
+		};
+		const menu = new Menu();
+		menu.addItem((i) => i.setTitle('Default').setChecked(!s.model).onClick(() => pick('')));
+		for (const m of s.models) {
+			if (m.value !== 'default') menu.addItem((i) => i.setTitle(m.displayName).setChecked(s.model === m.value).onClick(() => pick(m.value)));
+		}
+		menu.addSeparator();
+		menu.addItem((i) =>
+			i
+				.setTitle(s.models.length ? 'Refresh model list' : 'Load available models')
+				.setIcon('refresh-cw')
+				.onClick(async () => new Notice(await this.plugin.checkConnection())),
+		);
+		menu.showAtMouseEvent(e);
+	}
+
 	private newChat() {
 		if (this.turn) return;
 		const old = this.chat.messagesEl;
 		this.plugin.resetChat();
 		old.replaceWith(this.chat.messagesEl);
 		this.toolRows.clear();
+		this.turnEl = undefined;
+		this.refreshComposer();
 		this.focusInput();
 	}
 
 	private stop() {
 		if (!this.turn || this.stopping) return;
 		this.stopping = true;
-		this.sendEl.disabled = true;
-		this.sendEl.setText('Stopping…');
+		this.sendEl.addClass('is-stopping');
 		this.turn.stop();
 	}
 
 	private async send() {
 		const text = this.inputEl.value.trim();
 		if (!text || this.turn) return;
+		const chat = this.chat;
 		this.inputEl.value = '';
-		this.addDiv('claude-msg claude-user', text);
-		this.chat.messagesEl.scrollTop = this.chat.messagesEl.scrollHeight;
+		chat.title ??= text.split('\n')[0];
+		chat.messagesEl.createDiv({ cls: 'claude-user', text });
+		this.turnEl = chat.messagesEl.createDiv('claude-turn');
+		this.turnText = [];
+		this.errorShown = false;
+		chat.messagesEl.scrollTop = chat.messagesEl.scrollHeight;
 
 		const s = this.plugin.settings;
 		const exe = findClaude(s.claudePath);
 		const adapter = this.app.vault.adapter;
-		if (!exe) {
-			const msg = s.claudePath
-				? `Claude Code can't be started from "${s.claudePath}". Point the Executable setting at claude.exe (not a .cmd shim), or clear it to auto-detect.`
-				: 'Claude Code was not found. Install it from https://claude.com/claude-code, run `claude` once in a terminal to log in, or set its path in settings.';
-			this.addError(msg, { settings: true });
-			return;
-		}
-		if (!(adapter instanceof FileSystemAdapter)) {
-			this.addError('This vault is not on the local file system.');
+		if (!exe || !(adapter instanceof FileSystemAdapter)) {
+			if (!(adapter instanceof FileSystemAdapter)) this.addError('This vault is not on the local file system.');
+			else if (s.claudePath) this.addError(`Claude Code can't be started from "${s.claudePath}". Point the Executable setting at claude.exe (not a .cmd shim), or clear it to auto-detect.`, { settings: true });
+			else this.addError('Claude Code was not found. Install it from https://claude.com/claude-code, run `claude` once in a terminal to log in, or set its path in settings.', { settings: true });
+			this.finishTurn();
+			this.refreshComposer();
 			return;
 		}
 
-		const chat = this.chat;
 		const vault = adapter.getBasePath();
 		this.vault = vault;
 		this.shownThisTurn.clear();
 		this.editTargets.clear();
 		this.stopping = false;
-		this.errorShown = false;
 		this.turn = runTurn({
 			prompt: text,
 			cwd: vault,
@@ -201,6 +297,7 @@ export class ChatView extends ItemView {
 			},
 		});
 		this.setBusy(true);
+		this.setWorking('Thinking…');
 		try {
 			await this.turn.done;
 		} catch (e) {
@@ -209,9 +306,10 @@ export class ChatView extends ItemView {
 		} finally {
 			this.endText();
 			for (const cancel of this.pendingPrompts) cancel();
-			if (this.stopping) this.addDiv('claude-notice', 'Stopped.');
+			if (this.stopping) this.append('claude-notice', 'Stopped');
 			this.turn = undefined;
 			this.stopping = false;
+			this.finishTurn();
 			this.setBusy(false);
 		}
 	}
@@ -229,27 +327,31 @@ export class ChatView extends ItemView {
 	private askPermission(tool: string, input: Record<string, unknown>, signal: AbortSignal, vault: string): Promise<Choice> {
 		return new Promise((resolve) => {
 			if (signal.aborted) return resolve('deny');
-			let card!: HTMLElement;
-			this.keepPinned(() => (card = this.chat.messagesEl.createDiv('claude-permission')));
+			const card = this.append('claude-permission');
 			card.createDiv({ cls: 'claude-permission-title', text: permissionTitle(tool, input, vault) });
 			renderPermissionDetails(card, tool, input);
 			const buttons = card.createDiv('claude-permission-buttons');
+			this.setWorking('Waiting for your approval');
 
 			const finish = (choice: Choice, outcome: string) => {
 				signal.removeEventListener('abort', cancel);
 				this.pendingPrompts.delete(cancel);
 				buttons.remove();
-				card.addClass(choice === 'deny' ? 'is-denied' : 'is-allowed');
-				card.createDiv({ cls: 'claude-permission-outcome', text: outcome });
+				card.addClass('is-decided', choice === 'deny' ? 'is-denied' : 'is-allowed');
+				const result = card.createDiv('claude-permission-outcome');
+				setIcon(result.createSpan(), choice === 'deny' ? 'x' : 'check');
+				result.createSpan({ text: outcome });
+				if (this.turn) this.setWorking('Thinking…');
 				resolve(choice);
 			};
 			const cancel = () => finish('deny', 'Cancelled');
 			signal.addEventListener('abort', cancel);
 			this.pendingPrompts.add(cancel);
 
-			buttons.createEl('button', { cls: 'mod-cta', text: 'Allow' }).onclick = () => finish('once', 'Allowed');
-			buttons.createEl('button', { text: 'Allow for this chat' }).onclick = () => finish('chat', `Allowed ${tool} for this chat`);
-			buttons.createEl('button', { text: 'Deny' }).onclick = () => finish('deny', 'Denied');
+			const button = (text: string, cls: string, onClick: () => void) => (buttons.createEl('button', { cls: `claude-btn ${cls}`, text }).onclick = onClick);
+			button('Allow once', 'mod-primary', () => finish('once', 'Allowed'));
+			button('Allow for this chat', '', () => finish('chat', `Allowed ${tool} for this chat`));
+			button('Deny', 'mod-quiet', () => finish('deny', 'Denied'));
 			card.scrollIntoView({ block: 'nearest' }); // needs attention even if the user scrolled up
 		});
 	}
@@ -297,16 +399,14 @@ export class ChatView extends ItemView {
 
 	private addError(text: string, opts: { details?: string; settings?: boolean } = {}) {
 		this.errorShown = true;
-		this.keepPinned(() => {
-			const el = this.chat.messagesEl.createDiv('claude-error');
-			el.createDiv({ text });
-			if (opts.details) {
-				const details = el.createEl('details');
-				details.createEl('summary', { text: 'Details' });
-				details.createEl('pre', { text: opts.details });
-			}
-			if (opts.settings) el.createEl('button', { text: 'Open settings' }).onclick = () => this.plugin.openSettings();
-		});
+		const el = this.append('claude-error');
+		el.createDiv({ text });
+		if (opts.details) {
+			const details = el.createEl('details');
+			details.createEl('summary', { text: 'Details' });
+			details.createEl('pre', { text: opts.details });
+		}
+		if (opts.settings) el.createEl('button', { cls: 'claude-btn', text: 'Open settings' }).onclick = () => this.plugin.openSettings();
 	}
 
 	// An existing note opens as soon as Claude starts editing it, so the change lands while you watch
@@ -350,7 +450,8 @@ export class ChatView extends ItemView {
 
 	private startText() {
 		this.endText();
-		this.textBlock = { el: this.addDiv('claude-msg claude-assistant'), text: '', seq: 0 };
+		this.textBlock = { el: this.append('claude-reply markdown-rendered'), text: '', seq: 0 };
+		this.spark().addClass('is-quiet'); // the streaming text shows progress; keep just the spark
 	}
 
 	private appendText(text: string) {
@@ -363,8 +464,10 @@ export class ChatView extends ItemView {
 
 	private endText() {
 		if (!this.textBlock) return;
+		if (this.textBlock.text.trim()) this.turnText.push(this.textBlock.text);
 		void this.renderText(this.textBlock);
 		this.textBlock = undefined;
+		this.spark().removeClass('is-quiet');
 	}
 
 	private async renderText(block: TextBlock) {
@@ -378,26 +481,76 @@ export class ChatView extends ItemView {
 	}
 
 	private addToolRow(id: string, name: string, input: Record<string, unknown>) {
-		this.keepPinned(() => {
-			const row = this.chat.messagesEl.createEl('details', { cls: 'claude-tool' });
-			row.createEl('summary', { text: describeTool(name, input) });
-			row.createEl('pre', { text: JSON.stringify(input, null, 2) });
-			this.toolRows.set(id, row);
-		});
+		const [running, done] = describeTool(name, input);
+		const row = this.append('claude-tool is-running');
+		const details = row.createEl('details');
+		const summary = details.createEl('summary');
+		setIcon(summary.createSpan('claude-tool-icon'), TOOL_ICONS[name] ?? 'wrench');
+		summary.createSpan({ cls: 'claude-tool-label', text: running });
+		setIcon(summary.createSpan('claude-tool-chevron'), 'chevron-right');
+		details.createEl('pre', { text: JSON.stringify(input, null, 2) });
+		this.toolRows.set(id, { row, done });
 	}
 
 	private finishToolRow(id: string, isError: boolean, content: unknown) {
-		const row = this.toolRows.get(id);
-		if (!row) return;
+		const tool = this.toolRows.get(id);
+		if (!tool) return;
 		this.toolRows.delete(id);
-		row.addClass(isError ? 'is-error' : 'is-done');
-		if (isError) row.createEl('pre', { cls: 'claude-tool-error', text: resultText(content).replace(/^PreToolUse:\w+ hook error: /, '') });
+		tool.row.removeClass('is-running');
+		tool.row.querySelector('.claude-tool-label')?.setText(tool.done);
+		if (!isError) return;
+		tool.row.addClass('is-error');
+		tool.row.createDiv({ cls: 'claude-tool-reason', text: resultText(content).replace(/^PreToolUse:\w+ hook error: /, '') });
 	}
 
-	private addDiv(cls: string, text = '') {
+	/** Adds an element to the current turn, keeping the working spark below it. */
+	private append(cls: string, text = '') {
 		let el!: HTMLElement;
-		this.keepPinned(() => (el = this.chat.messagesEl.createDiv({ cls, text })));
+		this.keepPinned(() => {
+			const parent = this.turnEl ?? this.chat.messagesEl;
+			el = parent.createDiv({ cls, text });
+			if (this.turn) parent.appendChild(this.spark());
+		});
 		return el;
+	}
+
+	// One spark per chat: it animates at the bottom of the turn while Claude works,
+	// then rests under the latest reply, like Claude Desktop's mark.
+	private spark() {
+		return (
+			this.chat.messagesEl.querySelector<HTMLElement>('.claude-spark') ??
+			createDiv('claude-spark', (el) => {
+				el.createSpan({ cls: 'claude-spark-glyph', attr: { 'aria-hidden': 'true' } });
+				el.createSpan('claude-spark-label');
+			})
+		);
+	}
+
+	private setWorking(label: string) {
+		const spark = this.spark();
+		spark.addClass('is-working');
+		spark.querySelector('.claude-spark-label')?.setText(label);
+		this.keepPinned(() => this.turnEl?.appendChild(spark));
+	}
+
+	private finishTurn() {
+		const turn = this.turnEl;
+		if (!turn) return;
+		const footer = turn.createDiv('claude-turn-footer');
+		const spark = this.spark();
+		spark.removeClass('is-working', 'is-quiet');
+		footer.appendChild(spark);
+		const text = this.turnText.join('\n\n');
+		if (text) {
+			const copy = footer.createEl('button', { cls: 'clickable-icon claude-copy', attr: { 'aria-label': 'Copy' } });
+			setIcon(copy, 'copy');
+			copy.onclick = async () => {
+				await navigator.clipboard.writeText(text);
+				setIcon(copy, 'check');
+				window.setTimeout(() => setIcon(copy, 'copy'), 1500);
+			};
+		}
+		this.turnEl = undefined;
 	}
 
 	// Follow new content only if the user is already at the bottom (they may have scrolled up to read).
@@ -409,35 +562,37 @@ export class ChatView extends ItemView {
 	}
 
 	private setBusy(busy: boolean) {
-		this.sendEl.disabled = false;
-		this.sendEl.setText(busy ? 'Stop' : 'Send');
-		this.sendEl.toggleClass('mod-cta', !busy);
-		this.sendEl.toggleClass('mod-warning', busy);
+		this.sendEl.toggleClass('is-stop', busy);
+		this.sendEl.removeClass('is-stopping');
+		this.sendEl.setAttr('aria-label', busy ? 'Stop' : 'Send');
+		setIcon(this.sendEl, busy ? 'square' : 'arrow-up');
 		this.newChatEl.toggleClass('is-disabled', busy);
+		this.refreshComposer();
 	}
 }
 
-function describeTool(name: string, input: Record<string, unknown>): string {
+/** [while running, when done] labels for a tool call. */
+function describeTool(name: string, input: Record<string, unknown>): [string, string] {
 	const file = String(input.file_path ?? input.notebook_path ?? '').split(/[\\/]/).pop();
 	switch (name) {
 		case 'Read':
-			return `Reading ${file}`;
+			return [`Reading ${file}`, `Read ${file}`];
 		case 'Edit':
-			return `Editing ${file}`;
+			return [`Editing ${file}`, `Edited ${file}`];
 		case 'Write':
-			return `Writing ${file}`;
+			return [`Writing ${file}`, `Wrote ${file}`];
 		case 'Glob':
-			return `Finding files: ${input.pattern}`;
+			return [`Finding ${input.pattern}`, `Found ${input.pattern}`];
 		case 'Grep':
-			return `Searching for "${input.pattern}"`;
+			return [`Searching for “${input.pattern}”`, `Searched for “${input.pattern}”`];
 		case 'Bash':
-			return `Running: ${input.command}`;
+			return [`Running ${input.description ?? 'a command'}`, `Ran ${input.description ?? 'a command'}`];
 		case 'WebFetch':
-			return `Fetching ${input.url}`;
+			return [`Fetching ${input.url}`, `Fetched ${input.url}`];
 		case 'WebSearch':
-			return `Searching the web: ${input.query}`;
+			return [`Searching the web for “${input.query}”`, `Searched the web for “${input.query}”`];
 		default:
-			return name;
+			return [name, name];
 	}
 }
 
@@ -453,7 +608,7 @@ function friendlyError(code: SDKAssistantMessageError, raw: string, resetsAt?: n
 		case 'server_error':
 			return { text: 'Claude is temporarily unavailable. Try again in a moment.' };
 		case 'model_not_found':
-			return { text: "The selected model isn't available to your account. Choose another model in settings.", settings: true };
+			return { text: "The selected model isn't available to your account. Choose another one from the model menu below the message box." };
 		default:
 			return { text: raw || `Claude Code reported an error (${code}).` };
 	}
@@ -471,17 +626,17 @@ function permissionTitle(tool: string, input: Record<string, unknown>, vault: st
 	const file = vaultRelative(target, vault) ?? target;
 	switch (tool) {
 		case 'Edit':
-			return `Edit ${file}?`;
+			return `Allow Claude to edit ${file}?`;
 		case 'Write':
-			return `${fs.existsSync(path.resolve(vault, target)) ? 'Overwrite' : 'Create'} ${file}?`;
+			return `Allow Claude to ${fs.existsSync(path.resolve(vault, target)) ? 'overwrite' : 'create'} ${file}?`;
 		case 'Bash':
-			return 'Run a shell command?';
+			return 'Allow Claude to run a command?';
 		case 'WebFetch':
-			return `Fetch ${input.url}?`;
+			return `Allow Claude to fetch ${input.url}?`;
 		case 'WebSearch':
-			return `Search the web for "${input.query}"?`;
+			return `Allow Claude to search the web for “${input.query}”?`;
 		default:
-			return `Use ${tool}?`;
+			return `Allow Claude to use ${tool}?`;
 	}
 }
 

@@ -1,5 +1,5 @@
-import { App, FileSystemAdapter, PluginSettingTab, Setting } from 'obsidian';
-import { describeLogin, findClaude, testConnection } from './claude';
+import { App, PluginSettingTab, Setting } from 'obsidian';
+import { findClaude } from './claude';
 import type ClaudeVaultChat from './main';
 
 export interface Settings {
@@ -118,28 +118,9 @@ export class ClaudeSettingTab extends PluginSettingTab {
 	}
 
 	private async test(button: HTMLButtonElement) {
-		const s = this.plugin.settings;
-		const exe = findClaude(s.claudePath);
-		const adapter = this.app.vault.adapter;
-		if (!exe) {
-			this.status = s.claudePath
-				? `✗ Not usable: ${s.claudePath}. Point this at claude.exe (not a .cmd shim).`
-				: '✗ Claude Code not found. Install it from https://claude.com/claude-code, or enter the path to claude.exe.';
-			return this.display();
-		}
 		button.disabled = true;
 		button.setText('Testing…');
-		try {
-			const info = await testConnection(exe, adapter instanceof FileSystemAdapter ? adapter.getBasePath() : process.cwd());
-			const login = describeLogin(info.account);
-			s.models = info.models.map(({ value, displayName }) => ({ value, displayName }));
-			await this.plugin.saveSettings();
-			this.status = login
-				? `✓ ${info.version} · logged in with ${login}`
-				: `✗ ${info.version} found, but not logged in. Open a terminal, run \`claude\`, and use /login.`;
-		} catch (e) {
-			this.status = `✗ Could not start Claude Code: ${e instanceof Error ? e.message : String(e)}`;
-		}
+		this.status = await this.plugin.checkConnection();
 		this.display();
 	}
 }
