@@ -617,6 +617,7 @@
 .claude-chat .claude-input-card textarea,
 .claude-chat .claude-input-card textarea:focus,
 .claude-chat .claude-input-card textarea:hover {
+	field-sizing: content; /* grows with the text, up to max-height */
 	width: 100%;
 	min-height: 21px;
 	max-height: 240px;
@@ -758,7 +759,15 @@
 	display: none;
 }
 
-/* Collapsed: pin the group to its visible headers (measured in chatView.ts). */
+/*
+ * Collapsed: sidebar groups are `flex: 1 0 0; height: 0` with `contain: strict` leaves, so they
+ * have no natural height to shrink to. Pin the group to its header rows instead: the tab strip and
+ * our header are each one --header-height tall, and the strip is hidden when Claude is alone.
+ */
 .workspace-tabs.claude-collapsed {
-	flex: 0 0 var(--claude-collapsed-height, var(--header-height)) !important;
+	flex: 0 0 calc(var(--header-height) * 2) !important;
+}
+
+.workspace-tabs.claude-collapsed:not(:has(.workspace-leaf-content:not([data-type='claude-vault-chat']))) {
+	flex-basis: var(--header-height) !important;
 }

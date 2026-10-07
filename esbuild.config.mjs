@@ -35,7 +35,11 @@ const context = await esbuild.context({
 	// The SDK calls createRequire(import.meta.url) at load time (only to require 'fs'); CJS has no import.meta.
 	define: { 'import.meta.url': '__importMetaUrl' },
 	banner: {
-		js: 'var __importMetaUrl = require("url").pathToFileURL(typeof __filename === "string" ? __filename : process.execPath).href;',
+		js: [
+			// Minification strips the SDK's own header, so restate its notice: the bundled SDK isn't covered by this repo's license.
+			'/*! Includes @anthropic-ai/claude-agent-sdk, (c) Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements outlined here: https://code.claude.com/docs/en/legal-and-compliance */',
+			'var __importMetaUrl = require("url").pathToFileURL(typeof __filename === "string" ? __filename : process.execPath).href;',
+		].join('\n'),
 	},
 	plugins: [sdkRendererPatches],
 	format: 'cjs',

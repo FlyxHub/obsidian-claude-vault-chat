@@ -395,3 +395,8 @@ them, the build fails with a message that names the change, so that a broken plu
 ## License
 
 For license terms, see the [LICENSE](LICENSE) file.
+
+The `main.js` file in each release includes the
+[Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk), which is
+© Anthropic PBC. The SDK isn't covered by this project's license. Its use is subject to
+[Anthropic's legal agreements](https://code.claude.com/docs/en/legal-and-compliance).

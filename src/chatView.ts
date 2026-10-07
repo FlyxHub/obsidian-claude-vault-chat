@@ -28,7 +28,6 @@ export class ChatView extends ItemView {
 	// a class field declaration resets them to undefined after super(), and Obsidian's own
 	// view loading then crashes before onOpen runs.
 	private collapsed = false;
-	private barEl?: HTMLElement;
 	private toggleEl?: HTMLElement;
 	private chatTitleEl!: HTMLElement;
 	private newChatEl!: HTMLElement;
@@ -76,11 +75,11 @@ export class ChatView extends ItemView {
 	async onOpen() {
 		this.contentEl.empty();
 		this.contentEl.addClass('claude-chat');
-		this.barEl = this.contentEl.createDiv('claude-header');
-		this.toggleEl = this.barEl.createDiv('clickable-icon');
+		const header = this.contentEl.createDiv('claude-header');
+		this.toggleEl = header.createDiv('clickable-icon');
 		this.toggleEl.onclick = () => this.setCollapsed(!this.collapsed);
-		this.chatTitleEl = this.barEl.createDiv('claude-title');
-		this.newChatEl = this.barEl.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'New chat' } });
+		this.chatTitleEl = header.createDiv('claude-title');
+		this.newChatEl = header.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'New chat' } });
 		setIcon(this.newChatEl, 'square-pen');
 		this.newChatEl.onclick = () => this.newChat();
 
@@ -141,24 +140,15 @@ export class ChatView extends ItemView {
 		this.promptEl.focus();
 	}
 
-	// Obsidian has no public API to collapse a stacked sidebar group. Sidebar groups are
-	// `flex: 1 0 0; height: 0` with `contain: strict` leaves, so they have no natural height:
-	// pin the group to the measured height of its visible headers instead.
+	// Obsidian has no public API to collapse a stacked sidebar group; a class on the group lets
+	// styles.css shrink it to its header rows.
 	setCollapsed(collapsed: boolean) {
 		this.collapsed = collapsed;
 		if (this.toggleEl) {
 			setIcon(this.toggleEl, collapsed ? 'chevron-right' : 'chevron-down');
 			this.toggleEl.setAttr('aria-label', collapsed ? 'Expand' : 'Collapse');
 		}
-		this.app.workspace.onLayoutReady(() => {
-			const group = this.containerEl.closest<HTMLElement>('.workspace-tabs');
-			if (!group) return;
-			const strip = group.querySelector<HTMLElement>(':scope > .workspace-tab-header-container');
-			const height = (strip?.offsetHeight ?? 0) + (this.barEl?.offsetHeight ?? 0);
-			// Hidden sidebar measures 0; keep the CSS fallback (one header) in that case.
-			if (height > 0) group.style.setProperty('--claude-collapsed-height', `${height}px`);
-			group.toggleClass('claude-collapsed', this.collapsed);
-		});
+		this.app.workspace.onLayoutReady(() => this.containerEl.closest('.workspace-tabs')?.toggleClass('claude-collapsed', this.collapsed));
 		this.app.workspace.requestSaveLayout();
 	}
 
@@ -173,9 +163,6 @@ export class ChatView extends ItemView {
 		this.chipLabel(this.modeEl, APPROVAL_MODES[s.approvalMode]);
 		this.chipLabel(this.modelEl, s.models.find((m) => m.value === s.model)?.displayName ?? (s.model || 'Default'));
 		this.sendEl.toggleClass('is-empty', !this.turn && !this.promptEl.value.trim());
-		// Grow with the text, like Claude's composer, up to a cap.
-		this.promptEl.style.height = 'auto';
-		this.promptEl.style.height = `${Math.min(this.promptEl.scrollHeight, 240)}px`;
 	}
 
 	private chip(parent: HTMLElement, cls: string, onClick: (e: MouseEvent) => void) {
