@@ -1,9 +1,17 @@
 import { FileSystemAdapter, ItemView, MarkdownRenderer, setIcon, ViewStateResult, WorkspaceLeaf } from 'obsidian';
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionResult, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import fs from 'fs';
+import path from 'path';
 import { findClaude, runTurn, type Turn } from './claude';
 import type ClaudeVaultChat from './main';
+import { vaultRelative } from './vaultPath';
 
 export const VIEW_TYPE = 'claude-vault-chat';
+
+const READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
+const EDIT_TOOLS = new Set(['Edit', 'Write']);
+
+type Choice = 'once' | 'chat' | 'deny';
 
 interface TextBlock {
 	el: HTMLElement;
@@ -23,6 +31,7 @@ export class ChatView extends ItemView {
 	private stopping = false;
 	private textBlock?: TextBlock;
 	private toolRows = new Map<string, HTMLElement>();
+	private pendingPrompts = new Set<() => void>(); // cancel functions of open permission cards
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -157,12 +166,17 @@ export class ChatView extends ItemView {
 		}
 
 		const chat = this.chat;
+		const s = this.plugin.settings;
+		const vault = adapter.getBasePath();
 		this.stopping = false;
 		this.turn = runTurn({
 			prompt: text,
-			cwd: adapter.getBasePath(),
+			cwd: vault,
 			exe,
 			resume: chat.sessionId,
+			tools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', ...(s.allowBash ? ['Bash'] : []), ...(s.allowWeb ? ['WebFetch', 'WebSearch'] : [])],
+			protectedDirs: [this.app.vault.configDir, '.git', '.claude'],
+			canUseTool: (tool, input, opts) => this.canUseTool(tool, input, opts.signal, vault),
 			onMessage: (m) => {
 				if (m.type === 'system' && m.subtype === 'init') chat.sessionId = m.session_id;
 				this.onMessage(m);
@@ -175,11 +189,50 @@ export class ChatView extends ItemView {
 			if (!this.stopping) this.addDiv('claude-error', e instanceof Error ? e.message : String(e));
 		} finally {
 			this.endText();
+			for (const cancel of this.pendingPrompts) cancel();
 			if (this.stopping) this.addDiv('claude-notice', 'Stopped.');
 			this.turn = undefined;
 			this.stopping = false;
 			this.setBusy(false);
 		}
+	}
+
+	// Only consulted for calls the CLI wants approved; the PreToolUse hook has already enforced the vault boundary.
+	private async canUseTool(tool: string, input: Record<string, unknown>, signal: AbortSignal, vault: string): Promise<PermissionResult> {
+		const allow: PermissionResult = { behavior: 'allow', updatedInput: input };
+		const autoEdit = EDIT_TOOLS.has(tool) && this.plugin.settings.approvalMode === 'auto';
+		if (READ_TOOLS.has(tool) || autoEdit || this.chat.allowedTools.has(tool)) return allow;
+		const choice = await this.askPermission(tool, input, signal, vault);
+		if (choice === 'chat') this.chat.allowedTools.add(tool);
+		return choice === 'deny' ? { behavior: 'deny', message: 'The user declined this action.' } : allow;
+	}
+
+	private askPermission(tool: string, input: Record<string, unknown>, signal: AbortSignal, vault: string): Promise<Choice> {
+		return new Promise((resolve) => {
+			if (signal.aborted) return resolve('deny');
+			let card!: HTMLElement;
+			this.keepPinned(() => (card = this.chat.messagesEl.createDiv('claude-permission')));
+			card.createDiv({ cls: 'claude-permission-title', text: permissionTitle(tool, input, vault) });
+			renderPermissionDetails(card, tool, input);
+			const buttons = card.createDiv('claude-permission-buttons');
+
+			const finish = (choice: Choice, outcome: string) => {
+				signal.removeEventListener('abort', cancel);
+				this.pendingPrompts.delete(cancel);
+				buttons.remove();
+				card.addClass(choice === 'deny' ? 'is-denied' : 'is-allowed');
+				card.createDiv({ cls: 'claude-permission-outcome', text: outcome });
+				resolve(choice);
+			};
+			const cancel = () => finish('deny', 'Cancelled');
+			signal.addEventListener('abort', cancel);
+			this.pendingPrompts.add(cancel);
+
+			buttons.createEl('button', { cls: 'mod-cta', text: 'Allow' }).onclick = () => finish('once', 'Allowed');
+			buttons.createEl('button', { text: 'Allow for this chat' }).onclick = () => finish('chat', `Allowed ${tool} for this chat`);
+			buttons.createEl('button', { text: 'Deny' }).onclick = () => finish('deny', 'Denied');
+			card.scrollIntoView({ block: 'nearest' }); // needs attention even if the user scrolled up
+		});
 	}
 
 	private onMessage(m: SDKMessage) {
@@ -245,7 +298,7 @@ export class ChatView extends ItemView {
 		if (!row) return;
 		this.toolRows.delete(id);
 		row.addClass(isError ? 'is-error' : 'is-done');
-		if (isError) row.createEl('pre', { cls: 'claude-tool-error', text: resultText(content) });
+		if (isError) row.createEl('pre', { cls: 'claude-tool-error', text: resultText(content).replace(/^PreToolUse:\w+ hook error: /, '') });
 	}
 
 	private addDiv(cls: string, text = '') {
@@ -292,6 +345,40 @@ function describeTool(name: string, input: Record<string, unknown>): string {
 			return `Searching the web: ${input.query}`;
 		default:
 			return name;
+	}
+}
+
+function permissionTitle(tool: string, input: Record<string, unknown>, vault: string): string {
+	const target = String(input.file_path ?? '');
+	const file = vaultRelative(target, vault) ?? target;
+	switch (tool) {
+		case 'Edit':
+			return `Edit ${file}?`;
+		case 'Write':
+			return `${fs.existsSync(path.resolve(vault, target)) ? 'Overwrite' : 'Create'} ${file}?`;
+		case 'Bash':
+			return 'Run a shell command?';
+		case 'WebFetch':
+			return `Fetch ${input.url}?`;
+		case 'WebSearch':
+			return `Search the web for "${input.query}"?`;
+		default:
+			return `Use ${tool}?`;
+	}
+}
+
+function renderPermissionDetails(el: HTMLElement, tool: string, input: Record<string, unknown>) {
+	if (tool === 'Edit') {
+		el.createEl('pre', { cls: 'claude-diff-del', text: String(input.old_string ?? '') });
+		el.createEl('pre', { cls: 'claude-diff-add', text: String(input.new_string ?? '') });
+		if (input.replace_all) el.createDiv({ cls: 'claude-permission-note', text: 'Replaces every occurrence.' });
+	} else if (tool === 'Write') {
+		el.createEl('pre', { text: String(input.content ?? '') });
+	} else if (tool === 'Bash') {
+		el.createEl('pre', { text: String(input.command ?? '') });
+		if (input.description) el.createDiv({ cls: 'claude-permission-note', text: String(input.description) });
+	} else if (tool !== 'WebFetch' && tool !== 'WebSearch') {
+		el.createEl('pre', { text: JSON.stringify(input, null, 2) });
 	}
 }
 

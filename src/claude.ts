@@ -1,13 +1,14 @@
-import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type CanUseTool, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { denyReason } from './vaultPath';
 
 const SYSTEM_APPEND = `You are running as a chat panel inside Obsidian. The working directory is the root of the user's Obsidian vault, and its Markdown files are the user's notes.
 - Refer to notes as [[wikilinks]] (vault-relative path, no .md extension) so the user can click them.
 - Follow the vault's existing conventions (frontmatter, tags, folders) when creating or editing notes.
-- Never modify anything inside .obsidian/ or .git/.`;
+- You can only access files inside the vault, and you cannot modify .obsidian/, .git/ or .claude/.`;
 
 // Obsidian often lacks the shell PATH, so check the native installer's location first.
 // npm's .cmd / extensionless shims can't be spawned without a shell, so on Windows only a real .exe counts.
@@ -33,6 +34,9 @@ export function runTurn(o: {
 	cwd: string;
 	exe: string;
 	resume?: string;
+	tools: string[];
+	protectedDirs: string[]; // vault-relative folders Claude may read but never write
+	canUseTool: CanUseTool;
 	onMessage: (m: SDKMessage) => void;
 }): Turn {
 	let endInput!: () => void;
@@ -56,10 +60,30 @@ export function runTurn(o: {
 			strictMcpConfig: true, // no MCP servers, including claude.ai connectors
 			// No allowedTools: a bare entry approves the tool everywhere, bypassing canUseTool.
 			// Reads inside the cwd (the vault) are auto-allowed by 'default' mode anyway.
-			tools: ['Read', 'Glob', 'Grep'],
+			tools: o.tools,
 			permissionMode: 'default',
-			// Only reached for calls that need approval (e.g. reads outside the vault); real prompts come in milestone 4.
-			canUseTool: async () => ({ behavior: 'deny', message: 'Only reading inside the vault is allowed.' }),
+			canUseTool: o.canUseTool,
+			// The vault boundary. PreToolUse runs for every tool call, including ones the permission
+			// system auto-allows without consulting canUseTool. Fails closed if the check throws.
+			hooks: {
+				PreToolUse: [
+					{
+						hooks: [
+							async (input) => {
+								if (input.hook_event_name !== 'PreToolUse') return {};
+								let reason: string | undefined;
+								try {
+									reason = denyReason(input.tool_name, (input.tool_input ?? {}) as Record<string, unknown>, o.cwd, o.protectedDirs);
+								} catch (e) {
+									reason = `Blocked: could not verify the path (${e instanceof Error ? e.message : String(e)}).`;
+								}
+								if (!reason) return {};
+								return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
+							},
+						],
+					},
+				],
+			},
 			includePartialMessages: true,
 			systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_APPEND },
 			spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {

@@ -7,7 +7,8 @@
 	"private": true,
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "tsc --noEmit && node esbuild.config.mjs production"
+		"build": "tsc && node esbuild.config.mjs production",
+		"test": "node --test src/vaultPath.test.ts"
 	},
 	"license": "UNLICENSED",
 	"devDependencies": {

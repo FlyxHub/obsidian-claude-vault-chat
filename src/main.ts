@@ -1,23 +1,22 @@
 import { Component, Notice, Plugin } from 'obsidian';
 import { ChatView, VIEW_TYPE } from './chatView';
-
-interface PluginData {
-	placed: boolean;
-}
+import { ClaudeSettingTab, DEFAULT_SETTINGS, type Settings } from './settings';
 
 // The conversation lives on the plugin, not the pane, so moving or reopening the pane keeps it.
 export interface ChatState {
 	sessionId?: string;
 	messagesEl: HTMLElement;
 	component: Component; // owns rendered markdown children; unloaded on New Chat
+	allowedTools: Set<string>; // "Allow for this chat"
 }
 
 export default class ClaudeVaultChat extends Plugin {
-	data: PluginData = { placed: false };
+	settings: Settings = { ...DEFAULT_SETTINGS };
 	chat!: ChatState;
 
 	async onload() {
-		this.data = Object.assign({ placed: false }, await this.loadData());
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.addSettingTab(new ClaudeSettingTab(this.app, this));
 		this.resetChat();
 		this.registerView(VIEW_TYPE, (leaf) => new ChatView(leaf, this));
 		this.addRibbonIcon('bot', 'Open Claude', () => this.openChat());
@@ -26,16 +25,20 @@ export default class ClaudeVaultChat extends Plugin {
 
 		// Place the pane once, on first run; after that Obsidian's saved layout remembers where it is.
 		this.app.workspace.onLayoutReady(async () => {
-			if (this.data.placed) return;
+			if (this.settings.placed) return;
 			await this.openChat();
-			this.data.placed = true;
-			await this.saveData(this.data);
+			this.settings.placed = true;
+			await this.saveSettings();
 		});
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
 	}
 
 	resetChat() {
 		if (this.chat) this.removeChild(this.chat.component);
-		this.chat = { messagesEl: createDiv('claude-messages'), component: this.addChild(new Component()) };
+		this.chat = { messagesEl: createDiv('claude-messages'), component: this.addChild(new Component()), allowedTools: new Set() };
 	}
 
 	async openChat() {

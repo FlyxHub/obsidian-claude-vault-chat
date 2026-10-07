@@ -10,8 +10,18 @@
 		"isolatedModules": true,
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
-		"types": ["node"],
-		"lib": ["ES2022", "DOM", "DOM.Iterable"]
+		"types": [
+			"node"
+		],
+		"lib": [
+			"ES2022",
+			"DOM",
+			"DOM.Iterable"
+		],
+		"noEmit": true,
+		"allowImportingTsExtensions": true
 	},
-	"include": ["src/**/*.ts"]
+	"include": [
+		"src/**/*.ts"
+	]
 }
