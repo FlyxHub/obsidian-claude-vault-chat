@@ -1,6 +1,6 @@
 import { addIcon, Component, FileSystemAdapter, FileView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import { ChatView, VIEW_TYPE } from './chatView';
-import { describeLogin, findClaude, testConnection } from './claude';
+import { describeLogin, errorText, findClaude, testConnection } from './claude';
 import { ClaudeSettingTab, DEFAULT_SETTINGS, type Settings } from './settings';
 
 // Our own eight-spoke asterisk (echoing the ✻ glyph in the chat), not Anthropic's logo.
@@ -16,7 +16,7 @@ export interface ChatState {
 }
 
 export default class ClaudeVaultChat extends Plugin {
-	settings: Settings = { ...DEFAULT_SETTINGS };
+	declare settings: Settings; // Plugin.settings (Obsidian 1.13+), typed for this plugin
 	chat!: ChatState;
 	private editLeaf?: WorkspaceLeaf; // the dedicated tab for autoOpen: 'reuse'
 
@@ -54,15 +54,14 @@ export default class ClaudeVaultChat extends Plugin {
 				? `✗ Not usable: ${s.claudePath}. Point this at claude.exe (not a .cmd shim).`
 				: '✗ Claude Code not found. Install it from https://claude.com/claude-code, or enter the path to claude.exe.';
 		}
-		const adapter = this.app.vault.adapter;
 		try {
-			const info = await testConnection(exe, adapter instanceof FileSystemAdapter ? adapter.getBasePath() : process.cwd());
+			const info = await testConnection(exe, (this.app.vault.adapter as FileSystemAdapter).getBasePath()); // desktop-only plugin
 			s.models = info.models.map(({ value, displayName }) => ({ value, displayName }));
 			await this.saveSettings();
 			const login = describeLogin(info.account);
 			return login ? `✓ ${info.version} · logged in with ${login}` : `✗ ${info.version} found, but not logged in. Open a terminal, run \`claude\`, and use /login.`;
 		} catch (e) {
-			return `✗ Could not start Claude Code: ${e instanceof Error ? e.message : String(e)}`;
+			return `✗ Could not start Claude Code: ${errorText(e)}`;
 		}
 	}
 

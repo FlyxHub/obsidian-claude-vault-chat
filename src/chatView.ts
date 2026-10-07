@@ -2,7 +2,7 @@ import { FileSystemAdapter, ItemView, MarkdownRenderer, Menu, Notice, setIcon, T
 import type { PermissionResult, SDKAssistantMessageError, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import fs from 'fs';
 import path from 'path';
-import { ClaudeError, findClaude, runTurn, type Turn } from './claude';
+import { ClaudeError, errorText, findClaude, runTurn, type Turn } from './claude';
 import type ClaudeVaultChat from './main';
 import type { Settings } from './settings';
 import { vaultRelative } from './vaultPath';
@@ -12,16 +12,6 @@ export const VIEW_TYPE = 'claude-vault-chat';
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
 const EDIT_TOOLS = new Set(['Edit', 'Write']);
 const OPENABLE = /\.(md|canvas|base)$/i; // file types Obsidian opens itself
-const TOOL_ICONS: Record<string, string> = {
-	Read: 'file-text',
-	Glob: 'folder-search',
-	Grep: 'text-search',
-	Edit: 'pencil',
-	Write: 'file-plus',
-	Bash: 'terminal',
-	WebFetch: 'globe',
-	WebSearch: 'search',
-};
 const APPROVAL_MODES: Record<Settings['approvalMode'], string> = { ask: 'Ask before edits', auto: 'Auto-approve edits' };
 
 type Choice = 'once' | 'chat' | 'deny';
@@ -90,7 +80,7 @@ export class ChatView extends ItemView {
 		this.toggleEl = this.barEl.createDiv('clickable-icon');
 		this.toggleEl.onclick = () => this.setCollapsed(!this.collapsed);
 		this.chatTitleEl = this.barEl.createDiv('claude-title');
-		this.newChatEl = this.barEl.createDiv({ cls: 'clickable-icon claude-new-chat', attr: { 'aria-label': 'New chat' } });
+		this.newChatEl = this.barEl.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'New chat' } });
 		setIcon(this.newChatEl, 'square-pen');
 		this.newChatEl.onclick = () => this.newChat();
 
@@ -271,17 +261,15 @@ export class ChatView extends ItemView {
 
 		const s = this.plugin.settings;
 		const exe = findClaude(s.claudePath);
-		const adapter = this.app.vault.adapter;
-		if (!exe || !(adapter instanceof FileSystemAdapter)) {
-			if (!(adapter instanceof FileSystemAdapter)) this.addError('This vault is not on the local file system.');
-			else if (s.claudePath) this.addError(`Claude Code can't be started from "${s.claudePath}". Point the Executable setting at claude.exe (not a .cmd shim), or clear it to auto-detect.`, { settings: true });
+		if (!exe) {
+			if (s.claudePath) this.addError(`Claude Code can't be started from "${s.claudePath}". Point the Executable setting at claude.exe (not a .cmd shim), or clear it to auto-detect.`, { settings: true });
 			else this.addError('Claude Code was not found. Install it from https://claude.com/claude-code, run `claude` once in a terminal to log in, or set its path in settings.', { settings: true });
 			this.finishTurn();
 			this.refreshComposer();
 			return;
 		}
 
-		const vault = adapter.getBasePath();
+		const vault = (this.app.vault.adapter as FileSystemAdapter).getBasePath(); // desktop-only plugin
 		this.vault = vault;
 		this.shownThisTurn.clear();
 		this.editTargets.clear();
@@ -306,7 +294,7 @@ export class ChatView extends ItemView {
 			await this.turn.done;
 		} catch (e) {
 			// Launch failures, crashes: show the SDK's message with Claude Code's stderr behind "Details".
-			if (!this.stopping) this.addError(e instanceof Error ? e.message : String(e), { details: e instanceof ClaudeError ? e.details : '', settings: true });
+			if (!this.stopping) this.addError(errorText(e), { details: e instanceof ClaudeError ? e.details : '', settings: true });
 		} finally {
 			this.endText();
 			for (const cancel of this.pendingPrompts) cancel();
@@ -387,8 +375,8 @@ export class ChatView extends ItemView {
 		} else if (m.type === 'assistant' && m.error && !this.errorShown) {
 			// Failures arrive as a synthetic (non-streamed) assistant message carrying an error code.
 			const raw = m.message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
-			const { text, settings } = friendlyError(m.error, raw, this.resetsAt);
-			this.addError(text, { details: text === raw ? '' : raw, settings });
+			const text = friendlyError(m.error, raw, this.resetsAt);
+			this.addError(text, { details: text === raw ? '' : raw });
 		} else if (m.type === 'result' && m.is_error && !this.stopping && !this.errorShown) {
 			const raw = m.subtype === 'success' ? m.result : m.errors.join('\n');
 			if (m.subtype !== 'success' && m.startup_failure_reason === 'shell_tool_missing') {
@@ -438,7 +426,7 @@ export class ChatView extends ItemView {
 		void this.plugin.showEditedFile(file);
 	}
 
-	private waitForFile(path: string, ms = 5000): Promise<TFile | null> {
+	private waitForFile(path: string): Promise<TFile | null> {
 		const existing = this.app.vault.getFileByPath(path);
 		if (existing) return Promise.resolve(existing);
 		return new Promise((resolve) => {
@@ -448,7 +436,7 @@ export class ChatView extends ItemView {
 				resolve(file);
 			};
 			const ref = this.app.vault.on('create', (f) => f instanceof TFile && f.path === path && done(f));
-			const timer = window.setTimeout(() => done(null), ms);
+			const timer = window.setTimeout(() => done(null), 5000);
 		});
 	}
 
@@ -485,11 +473,11 @@ export class ChatView extends ItemView {
 	}
 
 	private addToolRow(id: string, name: string, input: Record<string, unknown>) {
-		const [running, done] = describeTool(name, input);
+		const [icon, running, done] = describeTool(name, input);
 		const row = this.append('claude-tool is-running');
 		const details = row.createEl('details');
 		const summary = details.createEl('summary');
-		setIcon(summary.createSpan('claude-tool-icon'), TOOL_ICONS[name] ?? 'wrench');
+		setIcon(summary.createSpan('claude-tool-icon'), icon);
 		summary.createSpan({ cls: 'claude-tool-label', text: running });
 		setIcon(summary.createSpan('claude-tool-chevron'), 'chevron-right');
 		details.createEl('pre', { text: JSON.stringify(input, null, 2) });
@@ -575,46 +563,38 @@ export class ChatView extends ItemView {
 	}
 }
 
-/** [while running, when done] labels for a tool call. */
-function describeTool(name: string, input: Record<string, unknown>): [string, string] {
-	const file = String(input.file_path ?? input.notebook_path ?? '').split(/[\\/]/).pop();
-	switch (name) {
-		case 'Read':
-			return [`Reading ${file}`, `Read ${file}`];
-		case 'Edit':
-			return [`Editing ${file}`, `Edited ${file}`];
-		case 'Write':
-			return [`Writing ${file}`, `Wrote ${file}`];
-		case 'Glob':
-			return [`Finding ${input.pattern}`, `Found ${input.pattern}`];
-		case 'Grep':
-			return [`Searching for “${input.pattern}”`, `Searched for “${input.pattern}”`];
-		case 'Bash':
-			return [`Running ${input.description ?? 'a command'}`, `Ran ${input.description ?? 'a command'}`];
-		case 'WebFetch':
-			return [`Fetching ${input.url}`, `Fetched ${input.url}`];
-		case 'WebSearch':
-			return [`Searching the web for “${input.query}”`, `Searched the web for “${input.query}”`];
-		default:
-			return [name, name];
-	}
+/** [icon, label while running, label when done] for a tool call. */
+function describeTool(name: string, input: Record<string, unknown>): [string, string, string] {
+	const file = String(input.file_path ?? '').split(/[\\/]/).pop();
+	const tools: Record<string, [string, string, string, unknown]> = {
+		Read: ['file-text', 'Reading', 'Read', file],
+		Edit: ['pencil', 'Editing', 'Edited', file],
+		Write: ['file-plus', 'Writing', 'Wrote', file],
+		Glob: ['folder-search', 'Finding', 'Found', input.pattern],
+		Grep: ['text-search', 'Searching for', 'Searched for', `“${input.pattern}”`],
+		Bash: ['terminal', 'Running', 'Ran', input.description ?? 'a command'],
+		WebFetch: ['globe', 'Fetching', 'Fetched', input.url],
+		WebSearch: ['search', 'Searching the web for', 'Searched the web for', `“${input.query}”`],
+	};
+	const [icon, running, done, subject] = tools[name] ?? ['wrench', name, name, ''];
+	return [icon, `${running} ${subject}`.trim(), `${done} ${subject}`.trim()];
 }
 
-function friendlyError(code: SDKAssistantMessageError, raw: string, resetsAt?: number): { text: string; settings?: boolean } {
+function friendlyError(code: SDKAssistantMessageError, raw: string, resetsAt?: number): string {
 	switch (code) {
 		case 'authentication_failed':
-			return { text: 'Claude Code is not logged in. Open a terminal, run `claude`, and use /login. Then send your message again.' };
+			return 'Claude Code is not logged in. Open a terminal, run `claude`, and use /login. Then send your message again.';
 		case 'rate_limit':
-			return { text: `You've reached your Claude usage limit.${resetsAt ? ` It resets ${formatReset(resetsAt)}.` : ''}` };
+			return `You've reached your Claude usage limit.${resetsAt ? ` It resets ${formatReset(resetsAt)}.` : ''}`;
 		case 'billing_error':
-			return { text: "There's a billing problem with your Claude account. Check your plan on claude.ai." };
+			return "There's a billing problem with your Claude account. Check your plan on claude.ai.";
 		case 'overloaded':
 		case 'server_error':
-			return { text: 'Claude is temporarily unavailable. Try again in a moment.' };
+			return 'Claude is temporarily unavailable. Try again in a moment.';
 		case 'model_not_found':
-			return { text: "The selected model isn't available to your account. Choose another one from the model menu below the message box." };
+			return "The selected model isn't available to your account. Choose another one from the model menu below the message box.";
 		default:
-			return { text: raw || `Claude Code reported an error (${code}).` };
+			return raw || `Claude Code reported an error (${code}).`;
 	}
 }
 

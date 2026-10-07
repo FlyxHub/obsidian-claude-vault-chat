@@ -38,6 +38,10 @@ export class ClaudeSettingTab extends PluginSettingTab {
 		const { containerEl, plugin } = this;
 		const s = plugin.settings;
 		const save = () => plugin.saveSettings();
+		const set = (key: keyof Settings) => async (value: unknown) => {
+			Object.assign(s, { [key]: value });
+			await save();
+		};
 		containerEl.empty();
 
 		new Setting(containerEl).setHeading().setName('Claude Code');
@@ -64,57 +68,28 @@ export class ClaudeSettingTab extends PluginSettingTab {
 				d.addOption('', 'Default');
 				for (const m of s.models) if (m.value !== 'default') d.addOption(m.value, m.displayName);
 				if (s.model && !s.models.some((m) => m.value === s.model)) d.addOption(s.model, s.model);
-				d.setValue(s.model).onChange(async (v) => {
-					s.model = v;
-					await save();
-				});
+				d.setValue(s.model).onChange(set('model'));
 			});
 
 		new Setting(containerEl).setHeading().setName('Permissions');
 		new Setting(containerEl)
 			.setName('Approval mode')
 			.setDesc('Reading and searching notes never asks. Writes to .obsidian/, .git/ and .claude/, and anything outside the vault, are always blocked.')
-			.addDropdown((d) =>
-				d
-					.addOptions({ ask: 'Ask before edits', auto: 'Auto-approve edits' })
-					.setValue(s.approvalMode)
-					.onChange(async (v) => {
-						s.approvalMode = v as Settings['approvalMode'];
-						await save();
-					}),
-			);
+			.addDropdown((d) => d.addOptions({ ask: 'Ask before edits', auto: 'Auto-approve edits' }).setValue(s.approvalMode).onChange(set('approvalMode')));
 		new Setting(containerEl)
 			.setName('Allow shell commands (Bash)')
 			.setDesc('Always asks first, even with auto-approve. Commands are not confined to the vault. Needs Git for Windows.')
-			.addToggle((t) =>
-				t.setValue(s.allowBash).onChange(async (v) => {
-					s.allowBash = v;
-					await save();
-				}),
-			);
+			.addToggle((t) => t.setValue(s.allowBash).onChange(set('allowBash')));
 		new Setting(containerEl)
 			.setName('Allow web access')
 			.setDesc('WebFetch and WebSearch. Always asks first.')
-			.addToggle((t) =>
-				t.setValue(s.allowWeb).onChange(async (v) => {
-					s.allowWeb = v;
-					await save();
-				}),
-			);
+			.addToggle((t) => t.setValue(s.allowWeb).onChange(set('allowWeb')));
 
 		new Setting(containerEl).setHeading().setName('Notes');
 		new Setting(containerEl)
 			.setName('Open notes Claude edits')
 			.setDesc('Shows each note as Claude edits or creates it, without moving your cursor out of the chat.')
-			.addDropdown((d) =>
-				d
-					.addOptions({ off: 'Off', reuse: 'Reuse one tab', new: 'New tab each time' })
-					.setValue(s.autoOpen)
-					.onChange(async (v) => {
-						s.autoOpen = v as Settings['autoOpen'];
-						await save();
-					}),
-			);
+			.addDropdown((d) => d.addOptions({ off: 'Off', reuse: 'Reuse one tab', new: 'New tab each time' }).setValue(s.autoOpen).onChange(set('autoOpen')));
 	}
 
 	private async test(button: HTMLButtonElement) {

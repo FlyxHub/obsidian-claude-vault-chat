@@ -1,6 +1,5 @@
 import esbuild from 'esbuild';
 import fs from 'node:fs/promises';
-import process from 'process';
 import { builtinModules } from 'node:module';
 
 const prod = process.argv[2] === 'production';
@@ -32,23 +31,7 @@ const sdkRendererPatches = {
 const context = await esbuild.context({
 	entryPoints: ['src/main.ts'],
 	bundle: true,
-	external: [
-		'obsidian',
-		'electron',
-		'@codemirror/autocomplete',
-		'@codemirror/collab',
-		'@codemirror/commands',
-		'@codemirror/language',
-		'@codemirror/lint',
-		'@codemirror/search',
-		'@codemirror/state',
-		'@codemirror/view',
-		'@lezer/common',
-		'@lezer/highlight',
-		'@lezer/lr',
-		...builtinModules,
-		...builtinModules.map((m) => `node:${m}`),
-	],
+	external: ['obsidian', ...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
 	// The SDK calls createRequire(import.meta.url) at load time (only to require 'fs'); CJS has no import.meta.
 	define: { 'import.meta.url': '__importMetaUrl' },
 	banner: {
@@ -59,7 +42,6 @@ const context = await esbuild.context({
 	target: 'es2022',
 	logLevel: 'info',
 	sourcemap: prod ? false : 'inline',
-	treeShaking: true,
 	outfile: 'main.js',
 	minify: prod,
 });

@@ -2,7 +2,6 @@ import {
 	query,
 	type AccountInfo,
 	type CanUseTool,
-	type ModelInfo,
 	type Options,
 	type SDKMessage,
 	type SDKUserMessage,
@@ -28,7 +27,7 @@ export class ClaudeError extends Error {
 	}
 }
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 // npm's .cmd/.bat/.ps1 shims can't be spawned without a shell (Node refuses since CVE-2024-27980).
 const isShim = (p: string) => process.platform === 'win32' && /\.(cmd|bat|ps1)$|[\\/]claude$/i.test(p);
@@ -67,14 +66,8 @@ function launchOptions(exe: string, cwd: string, abort: AbortController, onStder
 	};
 }
 
-export interface ConnectionInfo {
-	version: string;
-	account: AccountInfo;
-	models: ModelInfo[];
-}
-
 /** Starts Claude Code and reads its login and model list. No model call, so it costs no usage. */
-export async function testConnection(exe: string, cwd: string): Promise<ConnectionInfo> {
+export async function testConnection(exe: string, cwd: string) {
 	const version = await new Promise<string>((resolve, reject) =>
 		execFile(exe, ['--version'], { windowsHide: true, timeout: 15000 }, (err, out) => (err ? reject(err) : resolve(String(out).trim()))),
 	);

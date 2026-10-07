@@ -110,14 +110,12 @@
 	gap: 10px;
 }
 
-/* Claude's replies: serif, unboxed */
-
-/* Interface font, not --font-text: a custom (e.g. serif) note font shouldn't restyle the chat. */
+/* Claude's replies: unboxed, in the interface font, not --font-text,
+   so a custom (e.g. serif) note font doesn't restyle the chat. */
 .claude-chat .claude-reply {
 	font-family: var(--font-interface);
 	font-size: 14px;
 	line-height: 1.6;
-	color: var(--cvc-text);
 	overflow-wrap: anywhere;
 	padding: 0;
 }
