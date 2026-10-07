@@ -21,11 +21,81 @@
 	color: var(--text-muted);
 }
 
-.claude-body {
+.claude-messages {
 	flex: 1 1 auto;
-	padding: var(--size-4-2);
-	color: var(--text-faint);
 	overflow-y: auto;
+	padding: var(--size-4-2);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	user-select: text;
+	font-size: var(--font-ui-small);
+}
+
+.claude-messages:empty::before {
+	content: 'Ask Claude about the notes in this vault.';
+	color: var(--text-faint);
+}
+
+.claude-user {
+	align-self: flex-end;
+	max-width: 90%;
+	padding: var(--size-4-1) var(--size-4-2);
+	border-radius: var(--radius-m);
+	background: var(--background-modifier-hover);
+	white-space: pre-wrap;
+}
+
+.claude-assistant > :first-child {
+	margin-top: 0;
+}
+
+.claude-assistant > :last-child {
+	margin-bottom: 0;
+}
+
+.claude-tool {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.claude-tool > summary {
+	cursor: pointer;
+}
+
+.claude-tool.is-error > summary,
+.claude-error {
+	color: var(--text-error);
+}
+
+.claude-tool pre {
+	margin: var(--size-4-1) 0;
+	max-height: 200px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-all;
+	font-size: var(--font-ui-smaller);
+}
+
+.claude-error {
+	white-space: pre-wrap;
+}
+
+.claude-composer {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: flex-end;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.claude-composer textarea {
+	flex: 1 1 auto;
+	min-height: 3em;
+	max-height: 40vh;
+	resize: vertical;
+	font-size: var(--font-ui-small);
 }
 
 /* When Claude is alone in its tab group, our header row replaces the tab strip. */
@@ -36,8 +106,4 @@
 /* Collapsed: pin the group to its visible headers (measured in chatView.ts). */
 .workspace-tabs.claude-collapsed {
 	flex: 0 0 var(--claude-collapsed-height, var(--header-height)) !important;
-}
-
-.workspace-tabs.claude-collapsed .claude-body {
-	display: none;
 }
