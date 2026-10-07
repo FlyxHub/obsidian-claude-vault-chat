@@ -56,6 +56,9 @@ export default class ClaudeVaultChat extends Plugin {
 		const focused = activeDocument.activeElement as HTMLElement | null;
 		if (!(leaf.view instanceof FileView && leaf.view.file === file)) await leaf.openFile(file, { active: false });
 		await workspace.revealLeaf(leaf);
+		// Make it the active file (without focus) so the File Explorer highlights it, and reveals it
+		// in collapsed folders when the explorer's own "auto-reveal current file" toggle is on.
+		workspace.setActiveLeaf(leaf, { focus: false });
 		focused?.focus();
 	}
 
