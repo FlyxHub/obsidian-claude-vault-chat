@@ -1,6 +1,7 @@
-import { FileSystemAdapter, ItemView, MarkdownRenderer, setIcon, ViewStateResult } from 'obsidian';
+import { FileSystemAdapter, ItemView, MarkdownRenderer, setIcon, ViewStateResult, WorkspaceLeaf } from 'obsidian';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { findClaude, runTurn, type Turn } from './claude';
+import type ClaudeVaultChat from './main';
 
 export const VIEW_TYPE = 'claude-vault-chat';
 
@@ -15,13 +16,20 @@ export class ChatView extends ItemView {
 	private collapsed = false;
 	private headerEl?: HTMLElement;
 	private toggleEl?: HTMLElement;
-	private messagesEl!: HTMLElement;
+	private newChatEl!: HTMLElement;
 	private inputEl!: HTMLTextAreaElement;
 	private sendEl!: HTMLButtonElement;
-	private stickToBottom = true;
 	private turn?: Turn;
+	private stopping = false;
 	private textBlock?: TextBlock;
 	private toolRows = new Map<string, HTMLElement>();
+
+	constructor(
+		leaf: WorkspaceLeaf,
+		private plugin: ClaudeVaultChat,
+	) {
+		super(leaf);
+	}
 
 	getViewType() {
 		return VIEW_TYPE;
@@ -35,6 +43,10 @@ export class ChatView extends ItemView {
 		return 'bot';
 	}
 
+	private get chat() {
+		return this.plugin.chat;
+	}
+
 	async onOpen() {
 		this.contentEl.empty();
 		this.contentEl.addClass('claude-chat');
@@ -42,14 +54,13 @@ export class ChatView extends ItemView {
 		this.toggleEl = this.headerEl.createDiv('clickable-icon');
 		this.toggleEl.onclick = () => this.setCollapsed(!this.collapsed);
 		this.headerEl.createSpan({ cls: 'claude-title', text: 'Claude' });
+		this.newChatEl = this.headerEl.createDiv({ cls: 'clickable-icon claude-new-chat', attr: { 'aria-label': 'New chat' } });
+		setIcon(this.newChatEl, 'square-pen');
+		this.newChatEl.onclick = () => this.newChat();
 
-		this.messagesEl = this.contentEl.createDiv('claude-messages');
-		this.messagesEl.onscroll = () => {
-			const el = this.messagesEl;
-			this.stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-		};
+		this.contentEl.appendChild(this.chat.messagesEl);
 		// Rendered [[wikilinks]] aren't clickable outside a note view; open them ourselves.
-		this.registerDomEvent(this.messagesEl, 'click', (e) => {
+		this.registerDomEvent(this.contentEl, 'click', (e) => {
 			const link = (e.target as HTMLElement).closest('a.internal-link');
 			if (!link) return;
 			e.preventDefault();
@@ -64,12 +75,14 @@ export class ChatView extends ItemView {
 				void this.send();
 			}
 		});
-		this.sendEl = composer.createEl('button', { cls: 'mod-cta', text: 'Send' });
-		this.sendEl.onclick = () => void this.send();
+		this.sendEl = composer.createEl('button');
+		this.sendEl.onclick = () => (this.turn ? this.stop() : void this.send());
+		this.setBusy(false);
 		this.setCollapsed(this.collapsed);
 	}
 
 	async onClose() {
+		this.stop(); // a closed pane shouldn't keep working unseen
 		this.containerEl.closest('.workspace-tabs')?.removeClass('claude-collapsed');
 	}
 
@@ -81,6 +94,14 @@ export class ChatView extends ItemView {
 		const collapsed = (state as { collapsed?: unknown } | null)?.collapsed;
 		if (typeof collapsed === 'boolean') this.setCollapsed(collapsed);
 		await super.setState(state, result);
+	}
+
+	isBusy() {
+		return !!this.turn;
+	}
+
+	focusInput() {
+		this.inputEl.focus();
 	}
 
 	// Obsidian has no public API to collapse a stacked sidebar group. Sidebar groups are
@@ -104,27 +125,59 @@ export class ChatView extends ItemView {
 		this.app.workspace.requestSaveLayout();
 	}
 
+	private newChat() {
+		if (this.turn) return;
+		const old = this.chat.messagesEl;
+		this.plugin.resetChat();
+		old.replaceWith(this.chat.messagesEl);
+		this.toolRows.clear();
+		this.focusInput();
+	}
+
+	private stop() {
+		if (!this.turn || this.stopping) return;
+		this.stopping = true;
+		this.sendEl.disabled = true;
+		this.sendEl.setText('Stopping…');
+		this.turn.stop();
+	}
+
 	private async send() {
 		const text = this.inputEl.value.trim();
 		if (!text || this.turn) return;
 		this.inputEl.value = '';
-		this.stickToBottom = true;
 		this.addDiv('claude-msg claude-user', text);
+		this.chat.messagesEl.scrollTop = this.chat.messagesEl.scrollHeight;
 
 		const exe = findClaude();
-		if (!exe) return this.addError('Claude Code was not found. Install it from https://claude.com/claude-code and run `claude` once to log in.');
 		const adapter = this.app.vault.adapter;
-		if (!(adapter instanceof FileSystemAdapter)) return this.addError('This vault is not on the local file system.');
+		if (!exe || !(adapter instanceof FileSystemAdapter)) {
+			this.addDiv('claude-error', !exe ? 'Claude Code was not found. Install it from https://claude.com/claude-code and run `claude` once to log in.' : 'This vault is not on the local file system.');
+			return;
+		}
 
+		const chat = this.chat;
+		this.stopping = false;
+		this.turn = runTurn({
+			prompt: text,
+			cwd: adapter.getBasePath(),
+			exe,
+			resume: chat.sessionId,
+			onMessage: (m) => {
+				if (m.type === 'system' && m.subtype === 'init') chat.sessionId = m.session_id;
+				this.onMessage(m);
+			},
+		});
 		this.setBusy(true);
 		try {
-			this.turn = runTurn({ prompt: text, cwd: adapter.getBasePath(), exe, onMessage: (m) => this.onMessage(m) });
 			await this.turn.done;
 		} catch (e) {
-			this.addError(e instanceof Error ? e.message : String(e));
+			if (!this.stopping) this.addDiv('claude-error', e instanceof Error ? e.message : String(e));
 		} finally {
 			this.endText();
+			if (this.stopping) this.addDiv('claude-notice', 'Stopped.');
 			this.turn = undefined;
+			this.stopping = false;
 			this.setBusy(false);
 		}
 	}
@@ -144,8 +197,8 @@ export class ChatView extends ItemView {
 			for (const block of m.message.content) {
 				if (block.type === 'tool_result') this.finishToolRow(block.tool_use_id, !!block.is_error, block.content);
 			}
-		} else if (m.type === 'result' && m.is_error) {
-			this.addError(m.subtype === 'success' ? m.result : m.errors.join('\n'));
+		} else if (m.type === 'result' && m.is_error && !this.stopping) {
+			this.addDiv('claude-error', m.subtype === 'success' ? m.result : m.errors.join('\n'));
 		}
 	}
 
@@ -173,18 +226,18 @@ export class ChatView extends ItemView {
 		block.timer = undefined;
 		const seq = ++block.seq;
 		const tmp = createDiv();
-		await MarkdownRenderer.render(this.app, block.text, tmp, '', this);
+		await MarkdownRenderer.render(this.app, block.text, tmp, '', this.chat.component);
 		if (seq !== block.seq) return; // a newer render superseded this one
-		block.el.replaceChildren(...Array.from(tmp.childNodes));
-		this.scrollToBottom();
+		this.keepPinned(() => block.el.replaceChildren(...Array.from(tmp.childNodes)));
 	}
 
 	private addToolRow(id: string, name: string, input: Record<string, unknown>) {
-		const row = this.messagesEl.createEl('details', { cls: 'claude-tool' });
-		row.createEl('summary', { text: describeTool(name, input) });
-		row.createEl('pre', { text: JSON.stringify(input, null, 2) });
-		this.toolRows.set(id, row);
-		this.scrollToBottom();
+		this.keepPinned(() => {
+			const row = this.chat.messagesEl.createEl('details', { cls: 'claude-tool' });
+			row.createEl('summary', { text: describeTool(name, input) });
+			row.createEl('pre', { text: JSON.stringify(input, null, 2) });
+			this.toolRows.set(id, row);
+		});
 	}
 
 	private finishToolRow(id: string, isError: boolean, content: unknown) {
@@ -195,24 +248,26 @@ export class ChatView extends ItemView {
 		if (isError) row.createEl('pre', { cls: 'claude-tool-error', text: resultText(content) });
 	}
 
-	private addError(text: string) {
-		this.addDiv('claude-error', text);
-	}
-
 	private addDiv(cls: string, text = '') {
-		const el = this.messagesEl.createDiv({ cls, text });
-		this.scrollToBottom();
+		let el!: HTMLElement;
+		this.keepPinned(() => (el = this.chat.messagesEl.createDiv({ cls, text })));
 		return el;
 	}
 
-	private scrollToBottom() {
-		if (this.stickToBottom) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+	// Follow new content only if the user is already at the bottom (they may have scrolled up to read).
+	private keepPinned(update: () => void) {
+		const el = this.chat.messagesEl;
+		const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+		update();
+		if (atBottom) el.scrollTop = el.scrollHeight;
 	}
 
 	private setBusy(busy: boolean) {
-		this.sendEl.disabled = busy;
-		this.sendEl.setText(busy ? 'Working…' : 'Send');
-		this.contentEl.toggleClass('is-busy', busy);
+		this.sendEl.disabled = false;
+		this.sendEl.setText(busy ? 'Stop' : 'Send');
+		this.sendEl.toggleClass('mod-cta', !busy);
+		this.sendEl.toggleClass('mod-warning', busy);
+		this.newChatEl.toggleClass('is-disabled', busy);
 	}
 }
 

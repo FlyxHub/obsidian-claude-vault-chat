@@ -25,10 +25,16 @@ export function findClaude(): string | undefined {
 
 export interface Turn {
 	done: Promise<void>;
-	interrupt(): Promise<void>;
+	stop(): void;
 }
 
-export function runTurn(o: { prompt: string; cwd: string; exe: string; onMessage: (m: SDKMessage) => void }): Turn {
+export function runTurn(o: {
+	prompt: string;
+	cwd: string;
+	exe: string;
+	resume?: string;
+	onMessage: (m: SDKMessage) => void;
+}): Turn {
 	let endInput!: () => void;
 	const inputDone = new Promise<void>((resolve) => (endInput = resolve));
 	// Keep stdin open until the turn's result arrives so interrupt() can still reach the CLI.
@@ -38,11 +44,14 @@ export function runTurn(o: { prompt: string; cwd: string; exe: string; onMessage
 	}
 
 	let stderr = '';
+	const abort = new AbortController();
 	const q = query({
 		prompt: prompt(),
 		options: {
+			abortController: abort,
 			pathToClaudeCodeExecutable: o.exe,
 			cwd: o.cwd,
+			resume: o.resume,
 			settingSources: ['project'], // the vault's CLAUDE.md + .claude/settings.json; nothing from ~/.claude
 			strictMcpConfig: true, // no MCP servers, including claude.ai connectors
 			// No allowedTools: a bare entry approves the tool everywhere, bypassing canUseTool.
@@ -81,5 +90,14 @@ export function runTurn(o: { prompt: string; cwd: string; exe: string; onMessage
 		}
 	})();
 
-	return { done, interrupt: async () => void (await q.interrupt()) };
+	let hardStop: ReturnType<typeof setTimeout> | undefined;
+	void done.catch(() => {}).finally(() => clearTimeout(hardStop));
+	return {
+		done,
+		// Graceful interrupt keeps the session resumable; kill the process if the CLI doesn't stop.
+		stop: () => {
+			hardStop ??= setTimeout(() => abort.abort(), 5000);
+			q.interrupt().catch(() => abort.abort());
+		},
+	};
 }

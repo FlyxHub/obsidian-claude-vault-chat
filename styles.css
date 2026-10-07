@@ -21,6 +21,20 @@
 	color: var(--text-muted);
 }
 
+.claude-new-chat {
+	margin-left: auto;
+}
+
+.claude-header .clickable-icon.is-disabled {
+	opacity: 0.4;
+	pointer-events: none;
+}
+
+.claude-notice {
+	color: var(--text-faint);
+	font-style: italic;
+}
+
 .claude-messages {
 	flex: 1 1 auto;
 	overflow-y: auto;
