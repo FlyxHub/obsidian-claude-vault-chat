@@ -34,13 +34,16 @@ interface TextBlock {
 }
 
 export class ChatView extends ItemView {
+	// Field names must not shadow ItemView's undocumented internals (headerEl, titleEl, iconEl, ...):
+	// a class field declaration resets them to undefined after super(), and Obsidian's own
+	// view loading then crashes before onOpen runs.
 	private collapsed = false;
-	private headerEl?: HTMLElement;
+	private barEl?: HTMLElement;
 	private toggleEl?: HTMLElement;
-	private titleEl!: HTMLElement;
+	private chatTitleEl!: HTMLElement;
 	private newChatEl!: HTMLElement;
 	private greetingEl!: HTMLElement;
-	private inputEl!: HTMLTextAreaElement;
+	private promptEl!: HTMLTextAreaElement;
 	private modeEl!: HTMLElement;
 	private modelEl!: HTMLElement;
 	private sendEl!: HTMLButtonElement;
@@ -83,11 +86,11 @@ export class ChatView extends ItemView {
 	async onOpen() {
 		this.contentEl.empty();
 		this.contentEl.addClass('claude-chat');
-		this.headerEl = this.contentEl.createDiv('claude-header');
-		this.toggleEl = this.headerEl.createDiv('clickable-icon');
+		this.barEl = this.contentEl.createDiv('claude-header');
+		this.toggleEl = this.barEl.createDiv('clickable-icon');
 		this.toggleEl.onclick = () => this.setCollapsed(!this.collapsed);
-		this.titleEl = this.headerEl.createDiv('claude-title');
-		this.newChatEl = this.headerEl.createDiv({ cls: 'clickable-icon claude-new-chat', attr: { 'aria-label': 'New chat' } });
+		this.chatTitleEl = this.barEl.createDiv('claude-title');
+		this.newChatEl = this.barEl.createDiv({ cls: 'clickable-icon claude-new-chat', attr: { 'aria-label': 'New chat' } });
 		setIcon(this.newChatEl, 'square-pen');
 		this.newChatEl.onclick = () => this.newChat();
 
@@ -106,15 +109,15 @@ export class ChatView extends ItemView {
 		});
 
 		const card = this.contentEl.createDiv('claude-composer').createDiv('claude-input-card');
-		card.onclick = (e) => !(e.target as HTMLElement).closest('button') && this.inputEl.focus();
-		this.inputEl = card.createEl('textarea', { attr: { rows: '1', 'aria-label': 'Message Claude' } });
-		this.inputEl.addEventListener('keydown', (e) => {
+		card.onclick = (e) => !(e.target as HTMLElement).closest('button') && this.promptEl.focus();
+		this.promptEl = card.createEl('textarea', { attr: { rows: '1', 'aria-label': 'Message Claude' } });
+		this.promptEl.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
 				void this.send();
 			}
 		});
-		this.inputEl.addEventListener('input', () => this.refreshComposer());
+		this.promptEl.addEventListener('input', () => this.refreshComposer());
 		const bar = card.createDiv('claude-input-bar');
 		this.modeEl = this.chip(bar, 'claude-mode-chip', (e) => this.showModeMenu(e));
 		this.modelEl = this.chip(bar, 'claude-model-chip', (e) => this.showModelMenu(e));
@@ -145,7 +148,7 @@ export class ChatView extends ItemView {
 	}
 
 	focusInput() {
-		this.inputEl.focus();
+		this.promptEl.focus();
 	}
 
 	// Obsidian has no public API to collapse a stacked sidebar group. Sidebar groups are
@@ -161,7 +164,7 @@ export class ChatView extends ItemView {
 			const group = this.containerEl.closest<HTMLElement>('.workspace-tabs');
 			if (!group) return;
 			const strip = group.querySelector<HTMLElement>(':scope > .workspace-tab-header-container');
-			const height = (strip?.offsetHeight ?? 0) + (this.headerEl?.offsetHeight ?? 0);
+			const height = (strip?.offsetHeight ?? 0) + (this.barEl?.offsetHeight ?? 0);
 			// Hidden sidebar measures 0; keep the CSS fallback (one header) in that case.
 			if (height > 0) group.style.setProperty('--claude-collapsed-height', `${height}px`);
 			group.toggleClass('claude-collapsed', this.collapsed);
@@ -171,17 +174,18 @@ export class ChatView extends ItemView {
 
 	/** Re-reads title, settings-backed chips, placeholder and send state. */
 	refreshComposer() {
+		if (!this.promptEl) return; // not opened yet (settings saves refresh every chat view)
 		const s = this.plugin.settings;
-		this.titleEl.setText(this.chat.title ?? 'New chat');
+		this.chatTitleEl.setText(this.chat.title ?? 'New chat');
 		const hour = new Date().getHours();
 		this.greetingEl.setText(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
-		this.inputEl.placeholder = this.chat.messagesEl.childElementCount ? 'Reply to Claude…' : 'How can I help you today?';
+		this.promptEl.placeholder = this.chat.messagesEl.childElementCount ? 'Reply to Claude…' : 'How can I help you today?';
 		this.chipLabel(this.modeEl, APPROVAL_MODES[s.approvalMode]);
 		this.chipLabel(this.modelEl, s.models.find((m) => m.value === s.model)?.displayName ?? (s.model || 'Default'));
-		this.sendEl.toggleClass('is-empty', !this.turn && !this.inputEl.value.trim());
+		this.sendEl.toggleClass('is-empty', !this.turn && !this.promptEl.value.trim());
 		// Grow with the text, like Claude's composer, up to a cap.
-		this.inputEl.style.height = 'auto';
-		this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 240)}px`;
+		this.promptEl.style.height = 'auto';
+		this.promptEl.style.height = `${Math.min(this.promptEl.scrollHeight, 240)}px`;
 	}
 
 	private chip(parent: HTMLElement, cls: string, onClick: (e: MouseEvent) => void) {
@@ -254,10 +258,10 @@ export class ChatView extends ItemView {
 	}
 
 	private async send() {
-		const text = this.inputEl.value.trim();
+		const text = this.promptEl.value.trim();
 		if (!text || this.turn) return;
 		const chat = this.chat;
-		this.inputEl.value = '';
+		this.promptEl.value = '';
 		chat.title ??= text.split('\n')[0];
 		chat.messagesEl.createDiv({ cls: 'claude-user', text });
 		this.turnEl = chat.messagesEl.createDiv('claude-turn');
