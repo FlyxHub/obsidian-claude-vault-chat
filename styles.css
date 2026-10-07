@@ -1,0 +1,36 @@
+.claude-chat.view-content {
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.claude-header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: var(--size-4-1) var(--size-4-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex: 0 0 auto;
+}
+
+.claude-title {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+}
+
+.claude-body {
+	flex: 1 1 auto;
+	padding: var(--size-4-2);
+	color: var(--text-faint);
+	overflow-y: auto;
+}
+
+/* Collapsed: the tab group shrinks to its tab strip + our header row. */
+.workspace-tabs.claude-collapsed {
+	flex: 0 0 auto !important;
+}
+
+.workspace-tabs.claude-collapsed .claude-body {
+	display: none;
+}

@@ -1,0 +1,19 @@
+{
+	"name": "claude-vault-chat",
+	"version": "0.1.0",
+	"description": "Chat with Claude (via your local Claude Code) inside Obsidian.",
+	"main": "main.js",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc --noEmit && node esbuild.config.mjs production"
+	},
+	"license": "UNLICENSED",
+	"devDependencies": {
+		"@types/node": "^24.19.1",
+		"esbuild": "^0.28.2",
+		"obsidian": "^1.13.1",
+		"typescript": "^7.0.2"
+	}
+}
