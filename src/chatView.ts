@@ -32,6 +32,7 @@ export class ChatView extends ItemView {
 	// a class field declaration resets them to undefined after super(), and Obsidian's own
 	// view loading then crashes before onOpen runs.
 	private collapsed = false;
+	private styledGroupEl?: HTMLElement; // the tab group carrying our collapsed/alone classes
 	private toggleEl?: HTMLElement;
 	private chatTitleEl!: HTMLElement;
 	private newChatEl!: HTMLElement;
@@ -132,11 +133,12 @@ export class ChatView extends ItemView {
 
 		this.setBusy(false);
 		this.setCollapsed(this.collapsed);
+		this.registerEvent(this.app.workspace.on('layout-change', () => this.styleGroup())); // tabs added, closed or moved
 	}
 
 	async onClose() {
 		this.stop(); // a closed pane shouldn't keep working unseen
-		this.containerEl.closest('.workspace-tabs')?.removeClass('claude-collapsed');
+		this.styledGroupEl?.removeClass('claude-collapsed', 'claude-alone');
 	}
 
 	getState() {
@@ -157,16 +159,24 @@ export class ChatView extends ItemView {
 		this.promptEl.focus();
 	}
 
-	// Obsidian has no public API to collapse a stacked sidebar group; a class on the group lets
-	// styles.css shrink it to its header rows.
 	setCollapsed(collapsed: boolean) {
 		this.collapsed = collapsed;
 		if (this.toggleEl) {
 			setIcon(this.toggleEl, collapsed ? 'chevron-right' : 'chevron-down');
 			this.toggleEl.setAttr('aria-label', collapsed ? 'Expand' : 'Collapse');
 		}
-		this.app.workspace.onLayoutReady(() => this.containerEl.closest('.workspace-tabs')?.toggleClass('claude-collapsed', this.collapsed));
+		this.app.workspace.onLayoutReady(() => this.styleGroup());
 		this.app.workspace.requestSaveLayout();
+	}
+
+	// Obsidian has no public API to collapse a stacked sidebar group or hide its tab strip; classes on
+	// the group let styles.css shrink it to its header rows, and drop the strip when Claude is alone.
+	private styleGroup() {
+		const group = this.containerEl.closest<HTMLElement>('.workspace-tabs') ?? undefined;
+		if (group !== this.styledGroupEl) this.styledGroupEl?.removeClass('claude-collapsed', 'claude-alone'); // moved to another group
+		this.styledGroupEl = group;
+		group?.toggleClass('claude-collapsed', this.collapsed);
+		group?.toggleClass('claude-alone', group.querySelectorAll(':scope > .workspace-tab-container > .workspace-leaf').length === 1);
 	}
 
 	/** Re-reads title, settings-backed chips, placeholder and send state. */

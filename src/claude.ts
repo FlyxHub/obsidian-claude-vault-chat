@@ -87,7 +87,7 @@ function launchOptions(exe: string, cwd: string, ext: Extensions, abort: AbortCo
 /** Starts Claude Code and reads its login, models, skills and connectors. No model call, so it costs no usage. */
 export async function testConnection(exe: string, cwd: string, ext: Extensions) {
 	const version = await new Promise<string>((resolve, reject) =>
-		execFile(exe, ['--version'], { windowsHide: true, timeout: 15000 }, (err, out) => (err ? reject(err) : resolve(String(out).trim()))),
+		execFile(exe, ['--version'], { windowsHide: true, timeout: 15000 }, (err, out) => (err ? reject(new Error(err.message)) : resolve(String(out).trim()))),
 	);
 	let stderr = '';
 	let endInput!: () => void;
@@ -97,21 +97,22 @@ export async function testConnection(exe: string, cwd: string, ext: Extensions) 
 	const q = query({
 		prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
 			await inputDone;
+			yield* []; // never sends a message
 		})(),
 		options: { ...launchOptions(exe, cwd, ext, abort, (d) => (stderr += d)), tools: [] },
 	});
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	let timer: number | undefined;
 	try {
 		const init = await Promise.race([
 			q.initializationResult(),
-			new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('Timed out waiting for Claude Code to start.')), 20000))),
+			new Promise<never>((_, reject) => (timer = window.setTimeout(() => reject(new Error('Timed out waiting for Claude Code to start.')), 20000))),
 		]);
 		// Servers connect in the background; give them up to 10s to settle.
 		let connectors: McpServerStatus[] = [];
 		for (let i = 0; ext.connectors && i < 20; i++) {
 			connectors = await q.mcpServerStatus();
 			if (!connectors.some((c) => c.status === 'pending')) break;
-			await new Promise((r) => setTimeout(r, 500));
+			await new Promise((r) => window.setTimeout(r, 500));
 		}
 		const commands = init.commands.filter((c) => !c.builtin); // skills and plugin commands, not /clear etc.
 		return { version, account: init.account, models: init.models, commands, connectors };
@@ -119,10 +120,10 @@ export async function testConnection(exe: string, cwd: string, ext: Extensions) 
 		abort.abort();
 		throw new ClaudeError(errorText(e), stderr.trim());
 	} finally {
-		clearTimeout(timer);
+		window.clearTimeout(timer);
 		endInput();
 		void (async () => {
-			for await (const _ of q); // drain so the process can exit
+			while (!(await q.next()).done); // drain so the process can exit
 		})().catch(() => {});
 	}
 }
@@ -227,13 +228,13 @@ export function runTurn(o: {
 		}
 	})();
 
-	let hardStop: ReturnType<typeof setTimeout> | undefined;
-	void done.catch(() => {}).finally(() => clearTimeout(hardStop));
+	let hardStop: number | undefined;
+	void done.catch(() => {}).finally(() => window.clearTimeout(hardStop));
 	return {
 		done,
 		// Graceful interrupt keeps the session resumable; kill the process if the CLI doesn't stop.
 		stop: () => {
-			hardStop ??= setTimeout(() => abort.abort(), 5000);
+			hardStop ??= window.setTimeout(() => abort.abort(), 5000);
 			q.interrupt().catch(() => abort.abort());
 		},
 	};

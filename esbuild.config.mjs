@@ -23,6 +23,9 @@ const sdkRendererPatches = {
 				/import\{setMaxListeners as ([\w$]+)\}from"events"/,
 				'import{setMaxListeners as __sml}from"events";const $1=(...a)=>{try{__sml(...a)}catch{}}',
 			);
+			// The bundled zod probes for eval with new Function("") and, if allowed, compiles validators at
+			// runtime. Fail the probe so it uses its interpreted (jitless) mode: same results, no eval.
+			patch(/try\{return new Function\(""\),!0\}catch\(\w*\)\{return!1\}/, 'return!1');
 			return { contents: code, loader: 'js' };
 		});
 	},

@@ -37,11 +37,34 @@ working folder. Claude Code sends your message, and the content of any notes tha
 Anthropic and returns Claude's reply. The plugin checks every file that Claude tries to use and
 blocks anything outside the vault.
 
+## Disclosures
+
+Starting Claude Code from Obsidian needs access beyond the Obsidian plugin API:
+
+- **Account:** requires a Claude plan or an Anthropic Console account. See
+  [Before you begin](#before-you-begin).
+- **Network use:** the plugin makes no network requests of its own. Claude Code, which the plugin
+  starts, sends your messages and the notes that Claude reads to Anthropic. When Claude uses a
+  connector, Claude Code also sends that request to the connector's service.
+- **Runs another program:** the plugin starts the Claude Code program (`claude.exe`) as a separate
+  process for each message. If you turn on **Allow shell commands**, Claude can run shell commands
+  after you approve each one.
+- **Files outside the vault:** the plugin uses Node.js file access to find the Claude Code program,
+  to read your vault's `CLAUDE.md` file, and to resolve shortcuts and symbolic links, so that it can
+  block any path outside the vault. Claude Code reads its own settings and sign-in from
+  `~/.claude/` and saves conversation transcripts there.
+- **System information:** the plugin reads the location of your home folder to find Claude Code.
+  The bundled Claude Agent SDK reads environment variables, such as your user name, to start
+  Claude Code. Nothing is collected or sent by the plugin.
+- **Clipboard:** the **Copy** button under a reply writes the reply to your clipboard. The plugin
+  never reads your clipboard.
+- **No telemetry or ads:** the plugin doesn't collect usage data or show ads.
+
 ## Before you begin
 
 To use Vault Sidekick, you need the following:
 
-- Obsidian 1.7.2 or later, on desktop. The plugin doesn't run in Obsidian for mobile.
+- Obsidian 1.13 or later, on desktop. The plugin doesn't run in Obsidian for mobile.
 - A Claude Pro, Max, Team, or Enterprise plan, or an Anthropic Console account. The free Claude
   plan doesn't include Claude Code. Messages that you send in the chat count toward your plan's
   usage limits.
@@ -464,8 +487,10 @@ After each build, turn the plugin off and on in Obsidian to load the new version
 | `esbuild.config.mjs` | The build, including fixes that let the Claude Agent SDK run inside Obsidian. |
 
 The Claude Agent SDK is built for Node.js, and three parts of it don't work in Obsidian's app
-window. `esbuild.config.mjs` changes those parts when it builds the plugin. If an SDK update moves
-them, the build fails with a message that names the change, so that a broken plugin isn't released.
+window. `esbuild.config.mjs` changes those parts when it builds the plugin. It also stops the SDK's
+bundled validation library from generating code at runtime, so the plugin never uses `eval`. If an
+SDK update moves any of these, the build fails with a message that names the change, so that a
+broken plugin isn't released.
 
 ### Release a new version
 
@@ -482,6 +507,13 @@ them, the build fails with a message that names the change, so that a broken plu
 
 1. On GitHub, open the release draft that the **Release** workflow created, review it, and then
    publish it.
+
+The workflow also creates a build provenance attestation for `main.js` and `styles.css`. To check
+that a downloaded file was built from this repository, run:
+
+```bash
+gh attestation verify main.js -R FlyxHub/obsidian-vault-sidekick
+```
 
 ## License
 

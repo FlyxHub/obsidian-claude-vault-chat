@@ -1,8 +1,8 @@
 {
 	"id": "vault-sidekick",
 	"name": "Vault Sidekick",
-	"version": "1.0.0",
-	"minAppVersion": "1.7.2",
+	"version": "1.0.1",
+	"minAppVersion": "1.13.0",
 	"description": "A chat sidebar for your vault, powered by Claude through your local Claude Code login. Claude can read, search, create and edit your notes.",
 	"author": "FlyxHub",
 	"isDesktopOnly": true,

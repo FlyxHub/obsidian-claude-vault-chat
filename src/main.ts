@@ -25,7 +25,7 @@ export default class VaultSidekick extends Plugin {
 	private editLeaf?: WorkspaceLeaf; // the dedicated tab for autoOpen: 'reuse'
 
 	async onload() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<Settings> | null);
 		this.addSettingTab(new ClaudeSettingTab(this.app, this));
 		this.resetChat();
 		addIcon('claude-spark', SPARK_ICON);

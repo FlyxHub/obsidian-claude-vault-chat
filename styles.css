@@ -168,7 +168,6 @@
 
 .claude-chat .claude-reply a {
 	text-underline-offset: 2px;
-	text-decoration-thickness: 1px;
 }
 
 .claude-chat .claude-reply code {
@@ -816,10 +815,10 @@
 	}
 }
 
-/* Sidebar integration */
+/* Sidebar integration: the view sets these classes on its tab group (see styleGroup in chatView.ts) */
 
 /* When Claude is alone in its tab group, our header row replaces the tab strip. */
-.workspace-tabs:has(.workspace-leaf-content[data-type='vault-sidekick']):not(:has(.workspace-leaf-content:not([data-type='vault-sidekick']))) > .workspace-tab-header-container {
+.workspace-tabs.claude-alone > .workspace-tab-header-container {
 	display: none;
 }
 
@@ -827,11 +826,14 @@
  * Collapsed: sidebar groups are `flex: 1 0 0; height: 0` with `contain: strict` leaves, so they
  * have no natural height to shrink to. Pin the group to its header rows instead: the tab strip and
  * our header are each one --header-height tall, and the strip is hidden when Claude is alone.
+ * Min/max-height rather than flex, since Obsidian sets flex-grow inline on groups the user resized.
  */
 .workspace-tabs.claude-collapsed {
-	flex: 0 0 calc(var(--header-height) * 2) !important;
+	min-height: calc(var(--header-height) * 2);
+	max-height: calc(var(--header-height) * 2);
 }
 
-.workspace-tabs.claude-collapsed:not(:has(.workspace-leaf-content:not([data-type='vault-sidekick']))) {
-	flex-basis: var(--header-height) !important;
+.workspace-tabs.claude-collapsed.claude-alone {
+	min-height: var(--header-height);
+	max-height: var(--header-height);
 }
