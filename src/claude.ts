@@ -2,6 +2,7 @@ import {
 	query,
 	type AccountInfo,
 	type CanUseTool,
+	type McpServerStatus,
 	type Options,
 	type SDKMessage,
 	type SDKUserMessage,
@@ -48,17 +49,31 @@ export function findClaude(configured = ''): string | undefined {
 	}
 }
 
+/** What the user's own Claude Code setup may add to a session. */
+export interface Extensions {
+	connectors: boolean; // MCP servers: claude.ai connectors, plus servers added to Claude Code or shipped by plugins
+	skills: boolean; // ~/.claude user settings: skills, plugins, and skills synced from claude.ai
+	disabledConnectors: string[]; // server names, as Claude Code reports them
+}
+
 // How every session launches Claude Code from inside Obsidian.
-function launchOptions(exe: string, cwd: string, abort: AbortController, onStderr: (text: string) => void): Options {
+function launchOptions(exe: string, cwd: string, ext: Extensions, abort: AbortController, onStderr: (text: string) => void): Options {
 	return {
 		abortController: abort,
 		pathToClaudeCodeExecutable: exe,
 		cwd,
-		// No filesystem settings at all: ~/.claude stays out, and so does the vault's .claude/settings.json,
-		// whose hooks and env would run without a trust prompt for anyone who opens a shared vault.
-		// The vault's CLAUDE.md is passed as plain instructions instead (see vaultInstructions).
-		settingSources: [],
-		strictMcpConfig: true, // no MCP servers, including claude.ai connectors
+		// Never 'project' or 'local': the vault's .claude/ settings (hooks, env, MCP servers) would run without
+		// a trust prompt for anyone who opens a shared vault. The vault's CLAUDE.md is passed as plain
+		// instructions instead (see vaultInstructions). 'user' is the user's own ~/.claude setup.
+		settingSources: ext.skills ? ['user'] : [],
+		skills: ext.skills ? 'all' : undefined,
+		settings: {
+			disableSkillShellExecution: true, // a skill's inline !`command` runs without canUseTool or the vault boundary
+			disableBundledSkills: true, // Claude Code's own coding and desktop skills don't apply in a vault
+		},
+		strictMcpConfig: !ext.connectors, // the vault's .mcp.json never loads either way: it needs the 'project' source
+		// Claude Code names a server's tools mcp__<name>__<tool>, with characters outside [\w-] replaced by _.
+		disallowedTools: ext.disabledConnectors.map((name) => `mcp__${name.replace(/[^\w-]/g, '_')}`),
 		spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
 			// Node's spawn() rejects the renderer's DOM AbortSignal, so kill on abort ourselves.
 			const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -69,8 +84,8 @@ function launchOptions(exe: string, cwd: string, abort: AbortController, onStder
 	};
 }
 
-/** Starts Claude Code and reads its login and model list. No model call, so it costs no usage. */
-export async function testConnection(exe: string, cwd: string) {
+/** Starts Claude Code and reads its login, models, skills and connectors. No model call, so it costs no usage. */
+export async function testConnection(exe: string, cwd: string, ext: Extensions) {
 	const version = await new Promise<string>((resolve, reject) =>
 		execFile(exe, ['--version'], { windowsHide: true, timeout: 15000 }, (err, out) => (err ? reject(err) : resolve(String(out).trim()))),
 	);
@@ -83,7 +98,7 @@ export async function testConnection(exe: string, cwd: string) {
 		prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
 			await inputDone;
 		})(),
-		options: { ...launchOptions(exe, cwd, abort, (d) => (stderr += d)), tools: [] },
+		options: { ...launchOptions(exe, cwd, ext, abort, (d) => (stderr += d)), tools: [] },
 	});
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
@@ -91,7 +106,15 @@ export async function testConnection(exe: string, cwd: string) {
 			q.initializationResult(),
 			new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('Timed out waiting for Claude Code to start.')), 20000))),
 		]);
-		return { version, account: init.account, models: init.models };
+		// Servers connect in the background; give them up to 10s to settle.
+		let connectors: McpServerStatus[] = [];
+		for (let i = 0; ext.connectors && i < 20; i++) {
+			connectors = await q.mcpServerStatus();
+			if (!connectors.some((c) => c.status === 'pending')) break;
+			await new Promise((r) => setTimeout(r, 500));
+		}
+		const commands = init.commands.filter((c) => !c.builtin); // skills and plugin commands, not /clear etc.
+		return { version, account: init.account, models: init.models, commands, connectors };
 	} catch (e) {
 		abort.abort();
 		throw new ClaudeError(errorText(e), stderr.trim());
@@ -133,6 +156,7 @@ export function runTurn(o: {
 	resume?: string;
 	model?: string;
 	tools: string[];
+	ext: Extensions;
 	protectedDirs: string[]; // vault-relative folders Claude may read but never write
 	canUseTool: CanUseTool;
 	onMessage: (m: SDKMessage) => void;
@@ -150,16 +174,17 @@ export function runTurn(o: {
 	const q = query({
 		prompt: prompt(),
 		options: {
-			...launchOptions(o.exe, o.cwd, abort, (d) => (stderr = (stderr + d).slice(-4000))),
+			...launchOptions(o.exe, o.cwd, o.ext, abort, (d) => (stderr = (stderr + d).slice(-4000))),
 			resume: o.resume,
 			model: o.model,
 			// No allowedTools: a bare entry approves the tool everywhere, bypassing canUseTool.
-			// Reads inside the cwd (the vault) are auto-allowed by 'default' mode anyway.
 			tools: o.tools,
 			permissionMode: 'default',
 			canUseTool: o.canUseTool,
 			// The vault boundary. PreToolUse runs for every tool call, including ones the permission
-			// system auto-allows without consulting canUseTool. Fails closed if the check throws.
+			// system would auto-allow without consulting canUseTool. Fails closed if the check throws.
+			// Calls inside the boundary get 'ask', so canUseTool decides every one: allow rules (from
+			// ~/.claude settings, or a skill's allowed-tools) can't skip the plugin's approval cards.
 			hooks: {
 				PreToolUse: [
 					{
@@ -172,7 +197,7 @@ export function runTurn(o: {
 								} catch (e) {
 									reason = `Blocked: could not verify the path (${errorText(e)}).`;
 								}
-								if (!reason) return {};
+								if (!reason) return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask' } };
 								return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
 							},
 						],

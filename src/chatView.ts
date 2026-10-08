@@ -1,5 +1,5 @@
 import { FileSystemAdapter, ItemView, MarkdownRenderer, Menu, Notice, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from 'obsidian';
-import type { PermissionResult, SDKAssistantMessageError, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { CanUseTool, PermissionResult, SDKAssistantMessageError, SDKMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import fs from 'fs';
 import path from 'path';
 import { ClaudeError, errorText, findClaude, runTurn, type Turn } from './claude';
@@ -9,8 +9,11 @@ import { vaultRelative } from './vaultPath';
 
 export const VIEW_TYPE = 'claude-vault-chat';
 
-const READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
+const NEVER_ASK = new Set(['Read', 'Glob', 'Grep', 'Skill']); // reading notes; loading a skill's instructions
 const EDIT_TOOLS = new Set(['Edit', 'Write']);
+const CONNECTORS_URL = 'https://claude.ai/settings/connectors';
+
+type PermissionOptions = Parameters<CanUseTool>[2];
 const OPENABLE = /\.(md|canvas|base)$/i; // file types Obsidian opens itself
 const APPROVAL_MODES: Record<Settings['approvalMode'], string> = { ask: 'Ask before edits', auto: 'Auto-approve edits' };
 
@@ -33,6 +36,10 @@ export class ChatView extends ItemView {
 	private newChatEl!: HTMLElement;
 	private greetingEl!: HTMLElement;
 	private promptEl!: HTMLTextAreaElement;
+	private slashEl!: HTMLElement;
+	private slashItems: SlashCommand[] = []; // the / menu's matches; empty when it's closed
+	private slashIndex = 0;
+	private connectorsEl!: HTMLElement;
 	private modeEl!: HTMLElement;
 	private modelEl!: HTMLElement;
 	private sendEl!: HTMLButtonElement;
@@ -97,18 +104,27 @@ export class ChatView extends ItemView {
 			void this.app.workspace.openLinkText(link.getAttr('data-href') ?? link.getText(), '', e.ctrlKey || e.metaKey);
 		});
 
-		const card = this.contentEl.createDiv('claude-composer').createDiv('claude-input-card');
+		const composer = this.contentEl.createDiv('claude-composer');
+		this.slashEl = composer.createDiv({ cls: 'claude-slash', attr: { role: 'listbox', 'aria-label': 'Skills' } });
+		this.slashEl.hidden = true;
+		const card = composer.createDiv('claude-input-card');
 		card.onclick = (e) => !(e.target as HTMLElement).closest('button') && this.promptEl.focus();
 		this.promptEl = card.createEl('textarea', { attr: { rows: '1', 'aria-label': 'Message Claude' } });
 		this.promptEl.addEventListener('keydown', (e) => {
+			if (this.slashItems.length && this.slashKey(e)) return;
 			if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
 				void this.send();
 			}
 		});
-		this.promptEl.addEventListener('input', () => this.refreshComposer());
+		this.promptEl.addEventListener('input', () => {
+			this.updateSlash();
+			this.refreshComposer();
+		});
+		this.promptEl.addEventListener('blur', () => this.closeSlash());
 		const bar = card.createDiv('claude-input-bar');
 		this.modeEl = this.chip(bar, 'claude-mode-chip', (e) => this.showModeMenu(e));
+		this.connectorsEl = this.chip(bar, 'claude-connectors-chip', (e) => this.showConnectorsMenu(e), 'plug');
 		this.modelEl = this.chip(bar, 'claude-model-chip', (e) => this.showModelMenu(e));
 		this.sendEl = bar.createEl('button', { cls: 'claude-send' });
 		this.sendEl.onclick = () => (this.turn ? this.stop() : void this.send());
@@ -161,21 +177,108 @@ export class ChatView extends ItemView {
 		this.greetingEl.setText(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
 		this.promptEl.placeholder = this.chat.messagesEl.childElementCount ? 'Reply to Claude…' : 'How can I help you today?';
 		this.chipLabel(this.modeEl, APPROVAL_MODES[s.approvalMode]);
+		const on = this.plugin.connectorList.filter((c) => c.status === 'connected' && !s.disabledConnectors.includes(c.name)).length;
+		this.connectorsEl.hidden = !s.connectors;
+		this.chipLabel(this.connectorsEl, on ? String(on) : '', `Connectors (${on} on)`);
 		this.chipLabel(this.modelEl, s.models.find((m) => m.value === s.model)?.displayName ?? (s.model || 'Default'));
 		this.sendEl.toggleClass('is-empty', !this.turn && !this.promptEl.value.trim());
 	}
 
-	private chip(parent: HTMLElement, cls: string, onClick: (e: MouseEvent) => void) {
+	private chip(parent: HTMLElement, cls: string, onClick: (e: MouseEvent) => void, icon?: string) {
 		const el = parent.createEl('button', { cls: `claude-chip ${cls}` });
+		if (icon) setIcon(el.createSpan('claude-chip-icon'), icon);
 		el.createSpan('claude-chip-label');
-		setIcon(el.createSpan('claude-chip-chevron'), 'chevron-down');
+		if (!icon) setIcon(el.createSpan('claude-chip-chevron'), 'chevron-down'); // icon chips stay compact
 		el.onclick = onClick;
 		return el;
 	}
 
-	private chipLabel(chip: HTMLElement, text: string) {
+	private chipLabel(chip: HTMLElement, text: string, label = text) {
 		chip.querySelector('.claude-chip-label')?.setText(text);
-		chip.setAttr('aria-label', text);
+		chip.setAttr('aria-label', label);
+	}
+
+	// The / menu: the user's skills and plugin commands, offered while the message is just "/name".
+	private updateSlash() {
+		const query = /^\/(\S*)$/.exec(this.promptEl.value)?.[1]?.toLowerCase();
+		this.slashItems = query === undefined ? [] : this.plugin.slashCommands.filter((c) => c.name.toLowerCase().includes(query));
+		this.slashIndex = 0;
+		this.renderSlash();
+	}
+
+	private renderSlash() {
+		this.slashEl.hidden = !this.slashItems.length;
+		this.slashEl.empty();
+		this.slashItems.forEach((c, i) => {
+			const item = this.slashEl.createDiv({ cls: 'claude-slash-item', attr: { role: 'option', 'aria-selected': String(i === this.slashIndex) } });
+			item.toggleClass('is-selected', i === this.slashIndex);
+			item.createDiv({ cls: 'claude-slash-name', text: `/${c.name}` });
+			if (c.description) item.createDiv({ cls: 'claude-slash-desc', text: c.description });
+			item.onmousedown = (e) => {
+				e.preventDefault(); // keep focus in the message box
+				this.pickSlash(c);
+			};
+		});
+		this.slashEl.children[this.slashIndex]?.scrollIntoView({ block: 'nearest' });
+	}
+
+	/** Up/Down, Enter/Tab and Escape drive the open / menu; returns whether the key was used. */
+	private slashKey(e: KeyboardEvent): boolean {
+		const n = this.slashItems.length;
+		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+			this.slashIndex = (this.slashIndex + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+			this.renderSlash();
+		} else if ((e.key === 'Enter' || e.key === 'Tab') && !e.isComposing) {
+			this.pickSlash(this.slashItems[this.slashIndex]!);
+		} else if (e.key === 'Escape') {
+			this.closeSlash();
+		} else {
+			return false;
+		}
+		e.preventDefault();
+		return true;
+	}
+
+	private pickSlash(c: SlashCommand) {
+		this.promptEl.value = `/${c.name} `;
+		this.closeSlash();
+		this.refreshComposer();
+	}
+
+	private closeSlash() {
+		this.slashItems = [];
+		this.renderSlash();
+	}
+
+	private showConnectorsMenu(e: MouseEvent) {
+		const s = this.plugin.settings;
+		const menu = new Menu();
+		for (const c of this.plugin.connectorList) {
+			const name = connectorName(c.name);
+			const off = s.disabledConnectors.includes(c.name);
+			menu.addItem((i) => {
+				if (c.status === 'connected') {
+					i.setTitle(name)
+						.setChecked(!off)
+						.onClick(async () => {
+							s.disabledConnectors = off ? s.disabledConnectors.filter((n) => n !== c.name) : [...s.disabledConnectors, c.name];
+							await this.plugin.saveSettings();
+						});
+				} else if (c.status === 'needs-auth') {
+					// Signing in is Claude's job: claude.ai for its connectors, Claude Code's /mcp for the rest.
+					i.setTitle(`${name}: sign in`)
+						.setIcon('log-in')
+						.onClick(() => (c.source === 'claudeai' ? window.open(CONNECTORS_URL) : new Notice(`Sign in to ${name} from Claude Code: run claude in a terminal and use /mcp.`)));
+				} else {
+					i.setTitle(`${name}: ${c.status === 'disabled' ? 'off in Claude Code' : 'unavailable'}`).setDisabled(true);
+				}
+			});
+		}
+		if (!this.plugin.connectorList.length) menu.addItem((i) => i.setTitle('No connectors found').setDisabled(true));
+		menu.addSeparator();
+		menu.addItem((i) => i.setTitle('Manage connectors on claude.ai').setIcon('external-link').onClick(() => window.open(CONNECTORS_URL)));
+		menu.addItem((i) => i.setTitle('Refresh').setIcon('refresh-cw').onClick(async () => new Notice(await this.plugin.checkConnection())));
+		menu.showAtMouseEvent(e);
 	}
 
 	private showModeMenu(e: MouseEvent) {
@@ -239,6 +342,7 @@ export class ChatView extends ItemView {
 		if (!text || this.turn) return;
 		const chat = this.chat;
 		this.promptEl.value = '';
+		this.closeSlash();
 		chat.title ??= text.split('\n')[0];
 		chat.messagesEl.createDiv({ cls: 'claude-user', text });
 		this.turnEl = chat.messagesEl.createDiv('claude-turn');
@@ -267,9 +371,19 @@ export class ChatView extends ItemView {
 			exe,
 			resume: chat.sessionId,
 			model: s.model || undefined,
-			tools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', ...(s.allowBash ? ['Bash'] : []), ...(s.allowWeb ? ['WebFetch', 'WebSearch'] : [])],
+			tools: [
+				'Read',
+				'Glob',
+				'Grep',
+				'Edit',
+				'Write',
+				...(s.allowBash ? ['Bash'] : []),
+				...(s.allowWeb ? ['WebFetch', 'WebSearch'] : []),
+				...(s.skills ? ['Skill'] : []),
+			],
+			ext: s,
 			protectedDirs: [this.app.vault.configDir, '.git', '.claude'],
-			canUseTool: (tool, input, opts) => this.canUseTool(tool, input, opts.signal, vault),
+			canUseTool: (tool, input, opts) => this.canUseTool(tool, input, opts, vault),
 			onMessage: (m) => {
 				if (m.type === 'system' && m.subtype === 'init') chat.sessionId = m.session_id;
 				this.onMessage(m);
@@ -293,21 +407,22 @@ export class ChatView extends ItemView {
 		}
 	}
 
-	// Only consulted for calls the CLI wants approved; the PreToolUse hook has already enforced the vault boundary.
-	private async canUseTool(tool: string, input: Record<string, unknown>, signal: AbortSignal, vault: string): Promise<PermissionResult> {
+	// Decides every tool call: the PreToolUse hook enforces the vault boundary, then sends the rest here.
+	private async canUseTool(tool: string, input: Record<string, unknown>, opts: PermissionOptions, vault: string): Promise<PermissionResult> {
 		const allow: PermissionResult = { behavior: 'allow', updatedInput: input };
 		const autoEdit = EDIT_TOOLS.has(tool) && this.plugin.settings.approvalMode === 'auto';
-		if (READ_TOOLS.has(tool) || autoEdit || this.chat.allowedTools.has(tool)) return allow;
-		const choice = await this.askPermission(tool, input, signal, vault);
+		if (NEVER_ASK.has(tool) || autoEdit || this.chat.allowedTools.has(tool)) return allow;
+		const choice = await this.askPermission(tool, input, opts, vault);
 		if (choice === 'chat') this.chat.allowedTools.add(tool);
 		return choice === 'deny' ? { behavior: 'deny', message: 'The user declined this action.' } : allow;
 	}
 
-	private askPermission(tool: string, input: Record<string, unknown>, signal: AbortSignal, vault: string): Promise<Choice> {
+	private askPermission(tool: string, input: Record<string, unknown>, opts: PermissionOptions, vault: string): Promise<Choice> {
+		const { signal } = opts;
 		return new Promise((resolve) => {
 			if (signal.aborted) return resolve('deny');
 			const card = this.append('claude-permission');
-			card.createDiv({ cls: 'claude-permission-title', text: permissionTitle(tool, input, vault) });
+			card.createDiv({ cls: 'claude-permission-title', text: permissionTitle(tool, input, vault, opts.displayName) });
 			renderPermissionDetails(card, tool, input);
 			const buttons = card.createDiv('claude-permission-buttons');
 			this.setWorking('Waiting for your approval');
@@ -329,7 +444,7 @@ export class ChatView extends ItemView {
 
 			const button = (text: string, cls: string, onClick: () => void) => (buttons.createEl('button', { cls: `claude-btn ${cls}`, text }).onclick = onClick);
 			button('Allow once', 'mod-primary', () => finish('once', 'Allowed'));
-			button('Allow for this chat', '', () => finish('chat', `Allowed ${tool} for this chat`));
+			button('Allow for this chat', '', () => finish('chat', 'Allowed for this chat'));
 			button('Deny', 'mod-quiet', () => finish('deny', 'Denied'));
 			card.scrollIntoView({ block: 'nearest' }); // needs attention even if the user scrolled up
 		});
@@ -550,8 +665,21 @@ export class ChatView extends ItemView {
 	}
 }
 
+/** mcp__claude_ai_Indeed__search_jobs → { server: 'Indeed', tool: 'search jobs' } */
+function mcpTool(name: string) {
+	const m = /^mcp__(.+?)__(.+)$/.exec(name);
+	if (!m) return undefined;
+	const words = (s: string) => s.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+	return { server: words(m[1]!.replace(/^claude_ai_|^plugin_[^_]+_/, '')), tool: words(m[2]!).toLowerCase() };
+}
+
+/** "claude.ai Gmail" → "Gmail"; "plugin:support:atlassian" → "atlassian" */
+const connectorName = (name: string) => name.replace(/^claude\.ai /, '').split(':').pop()!;
+
 /** [icon, label while running, label when done] for a tool call. */
 function describeTool(name: string, input: Record<string, unknown>): [string, string, string] {
+	const mcp = mcpTool(name);
+	if (mcp) return ['plug', `${mcp.server}: ${mcp.tool}`, `${mcp.server}: ${mcp.tool}`];
 	const file = String(input.file_path ?? '').split(/[\\/]/).pop();
 	const tools: Record<string, [string, string, string, unknown]> = {
 		Read: ['file-text', 'Reading', 'Read', file],
@@ -562,6 +690,7 @@ function describeTool(name: string, input: Record<string, unknown>): [string, st
 		Bash: ['terminal', 'Running', 'Ran', input.description ?? 'a command'],
 		WebFetch: ['globe', 'Fetching', 'Fetched', input.url],
 		WebSearch: ['search', 'Searching the web for', 'Searched the web for', `“${input.query}”`],
+		Skill: ['sparkles', 'Using skill', 'Used skill', input.skill],
 	};
 	const [icon, running, done, subject] = tools[name] ?? ['wrench', name, name, ''];
 	return [icon, `${running} ${subject}`.trim(), `${done} ${subject}`.trim()];
@@ -592,7 +721,9 @@ function formatReset(unixSeconds: number): string {
 		: `on ${d.toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit' })}`;
 }
 
-function permissionTitle(tool: string, input: Record<string, unknown>, vault: string): string {
+function permissionTitle(tool: string, input: Record<string, unknown>, vault: string, displayName?: string): string {
+	const mcp = mcpTool(tool);
+	if (mcp) return `Allow Claude to use ${displayName ?? mcp.tool} in ${mcp.server}?`;
 	const target = String(input.file_path ?? '');
 	const file = vaultRelative(target, vault) ?? target;
 	switch (tool) {

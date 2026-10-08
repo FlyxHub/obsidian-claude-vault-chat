@@ -1,4 +1,5 @@
 import { addIcon, Component, FileSystemAdapter, FileView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import type { McpServerStatus, SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { ChatView, VIEW_TYPE } from './chatView';
 import { describeLogin, errorText, findClaude, testConnection } from './claude';
 import { ClaudeSettingTab, DEFAULT_SETTINGS, type Settings } from './settings';
@@ -18,6 +19,9 @@ export interface ChatState {
 export default class ClaudeVaultChat extends Plugin {
 	declare settings: Settings; // Plugin.settings (Obsidian 1.13+), typed for this plugin
 	chat!: ChatState;
+	// Loaded by checkConnection: the / menu and the composer's connector menu.
+	slashCommands: SlashCommand[] = [];
+	connectorList: McpServerStatus[] = [];
 	private editLeaf?: WorkspaceLeaf; // the dedicated tab for autoOpen: 'reuse'
 
 	async onload() {
@@ -32,6 +36,7 @@ export default class ClaudeVaultChat extends Plugin {
 
 		// Place the pane once, on first run; after that Obsidian's saved layout remembers where it is.
 		this.app.workspace.onLayoutReady(async () => {
+			if (this.settings.connectors || this.settings.skills) void this.checkConnection(); // fills the menus; no model call
 			if (this.settings.placed) return;
 			await this.openChat();
 			this.settings.placed = true;
@@ -45,7 +50,7 @@ export default class ClaudeVaultChat extends Plugin {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) if (leaf.view instanceof ChatView) leaf.view.refreshComposer();
 	}
 
-	/** Starts Claude Code to check its login and refresh the model list; returns a one-line status. */
+	/** Starts Claude Code to check its login and refresh the models, skills and connectors; returns a one-line status. */
 	async checkConnection(): Promise<string> {
 		const s = this.settings;
 		const exe = findClaude(s.claudePath);
@@ -55,7 +60,9 @@ export default class ClaudeVaultChat extends Plugin {
 				: '✗ Claude Code not found. Install it from https://claude.com/claude-code, or enter the path to claude.exe.';
 		}
 		try {
-			const info = await testConnection(exe, (this.app.vault.adapter as FileSystemAdapter).getBasePath()); // desktop-only plugin
+			const info = await testConnection(exe, (this.app.vault.adapter as FileSystemAdapter).getBasePath(), s); // desktop-only plugin
+			this.slashCommands = info.commands;
+			this.connectorList = info.connectors;
 			s.models = info.models.map(({ value, displayName }) => ({ value, displayName }));
 			await this.saveSettings();
 			const login = describeLogin(info.account);

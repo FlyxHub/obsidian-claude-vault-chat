@@ -10,6 +10,9 @@ export interface Settings {
 	approvalMode: 'ask' | 'auto';
 	allowBash: boolean;
 	allowWeb: boolean;
+	connectors: boolean;
+	disabledConnectors: string[]; // switched off from the composer's connector menu
+	skills: boolean;
 	autoOpen: 'off' | 'reuse' | 'new';
 }
 
@@ -21,6 +24,9 @@ export const DEFAULT_SETTINGS: Settings = {
 	approvalMode: 'ask',
 	allowBash: false,
 	allowWeb: false,
+	connectors: false,
+	disabledConnectors: [],
+	skills: false,
 	autoOpen: 'reuse',
 };
 
@@ -84,6 +90,25 @@ export class ClaudeSettingTab extends PluginSettingTab {
 			.setName('Allow web access')
 			.setDesc('WebFetch and WebSearch. Always asks first.')
 			.addToggle((t) => t.setValue(s.allowWeb).onChange(set('allowWeb')));
+
+		// Both change what Claude Code loads, so reload the connector list and the / menu.
+		const reload = (key: 'connectors' | 'skills') => async (value: boolean) => {
+			await set(key)(value);
+			void plugin.checkConnection();
+		};
+		new Setting(containerEl).setHeading().setName('Connectors and skills');
+		new Setting(containerEl)
+			.setName('Connectors')
+			.setDesc(
+				'Lets Claude use the connectors on your Claude account (manage them at claude.ai, under Settings > Connectors) and MCP servers you added to Claude Code. Always asks first. Switch single connectors off with the plug button below the message box.',
+			)
+			.addToggle((t) => t.setValue(s.connectors).onChange(reload('connectors')));
+		new Setting(containerEl)
+			.setName('Skills and plugins')
+			.setDesc(
+				"Loads your Claude Code user setup (~/.claude): your skills and plugins, and the skills you turned on at claude.ai. Type / in the message box to use one. Plugin hooks run as they do in Claude Code. The vault's own .claude/ folder is never loaded.",
+			)
+			.addToggle((t) => t.setValue(s.skills).onChange(reload('skills')));
 
 		new Setting(containerEl).setHeading().setName('Notes');
 		new Setting(containerEl)
