@@ -49,7 +49,10 @@ test('writes to protected folders are denied', () => {
 
 test('vaultRelative normalizes separators and case', () => {
 	assert.equal(vaultRelative(path.join(vault, 'Notes', 'a.md'), vault), 'Notes/a.md');
-	assert.equal(vaultRelative('Notes\\new.md', vault), 'Notes/new.md');
 	assert.equal(vaultRelative(path.join(outside, 'x.md'), vault), undefined);
-	if (process.platform === 'win32') assert.equal(vaultRelative(path.join(vault.toUpperCase(), 'NOTES', 'A.MD'), vault), 'Notes/a.md');
+	// Backslash separators and case-insensitive paths are Windows-only; on Linux '\' is a filename character.
+	if (process.platform === 'win32') {
+		assert.equal(vaultRelative('Notes\\new.md', vault), 'Notes/new.md');
+		assert.equal(vaultRelative(path.join(vault.toUpperCase(), 'NOTES', 'A.MD'), vault), 'Notes/a.md');
+	}
 });
