@@ -1,6 +1,6 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import { findClaude } from './claude';
-import type ClaudeVaultChat from './main';
+import type VaultSidekick from './main';
 
 export interface Settings {
 	placed: boolean; // pane was placed under the File Explorer on first run
@@ -35,7 +35,7 @@ export class ClaudeSettingTab extends PluginSettingTab {
 
 	constructor(
 		app: App,
-		private plugin: ClaudeVaultChat,
+		private plugin: VaultSidekick,
 	) {
 		super(app, plugin);
 	}

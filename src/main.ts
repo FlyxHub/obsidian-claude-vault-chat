@@ -16,7 +16,7 @@ export interface ChatState {
 	allowedTools: Set<string>; // "Allow for this chat"
 }
 
-export default class ClaudeVaultChat extends Plugin {
+export default class VaultSidekick extends Plugin {
 	declare settings: Settings; // Plugin.settings (Obsidian 1.13+), typed for this plugin
 	chat!: ChatState;
 	// Loaded by checkConnection: the / menu and the composer's connector menu.
@@ -30,7 +30,7 @@ export default class ClaudeVaultChat extends Plugin {
 		this.resetChat();
 		addIcon('claude-spark', SPARK_ICON);
 		this.registerView(VIEW_TYPE, (leaf) => new ChatView(leaf, this));
-		this.addRibbonIcon('claude-spark', 'Open Claude', () => this.openChat());
+		this.addRibbonIcon('claude-spark', 'Open Vault Sidekick', () => this.openChat());
 		this.addCommand({ id: 'open', name: 'Open or focus chat', callback: () => this.openChat() });
 		this.addCommand({ id: 'move-to-right-sidebar', name: 'Move chat to right sidebar', callback: () => this.moveToRight() });
 

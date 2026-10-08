@@ -1,5 +1,5 @@
 /*
- * Claude Vault Chat: the chat pane takes on Claude Desktop's layout and voice
+ * Vault Sidekick: the chat pane takes on Claude Desktop's layout and voice
  * in Obsidian's own fonts and the colors of the installed theme (serif only for the greeting).
  * Clay is kept for what Claude does: the send button and the spark.
  */
@@ -819,7 +819,7 @@
 /* Sidebar integration */
 
 /* When Claude is alone in its tab group, our header row replaces the tab strip. */
-.workspace-tabs:has(.workspace-leaf-content[data-type='claude-vault-chat']):not(:has(.workspace-leaf-content:not([data-type='claude-vault-chat']))) > .workspace-tab-header-container {
+.workspace-tabs:has(.workspace-leaf-content[data-type='vault-sidekick']):not(:has(.workspace-leaf-content:not([data-type='vault-sidekick']))) > .workspace-tab-header-container {
 	display: none;
 }
 
@@ -832,6 +832,6 @@
 	flex: 0 0 calc(var(--header-height) * 2) !important;
 }
 
-.workspace-tabs.claude-collapsed:not(:has(.workspace-leaf-content:not([data-type='claude-vault-chat']))) {
+.workspace-tabs.claude-collapsed:not(:has(.workspace-leaf-content:not([data-type='vault-sidekick']))) {
 	flex-basis: var(--header-height) !important;
 }

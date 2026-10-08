@@ -1,14 +1,15 @@
-# Claude Vault Chat
+# Vault Sidekick
 
-Claude Vault Chat is an Obsidian plugin that adds a Claude chat to your sidebar. It runs on the
-[Claude Code](https://claude.com/claude-code) installation on your computer and uses the account
-that you sign in to Claude Code with. Claude can read, search, create, and edit the notes in your
-vault, and the plugin opens each note that Claude edits so that you can watch the change happen.
+Vault Sidekick is an Obsidian plugin that adds a chat to your sidebar, powered by Claude. It runs on
+the [Claude Code](https://claude.com/claude-code) installation on your computer and uses the
+account that you sign in to Claude Code with. Claude can read, search, create, and edit the notes in
+your vault, and the plugin opens each note that Claude edits so that you can watch the change
+happen.
 
 The plugin doesn't ask for an API key and never reads Claude Code's credentials. Claude Code
 handles sign-in, and the plugin starts it for each message.
 
-> **Note:** Claude Vault Chat is an independent project. It isn't made by, endorsed by, or
+> **Note:** Vault Sidekick is an independent project. It isn't made by, endorsed by, or
 > affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.
 
 ## Features
@@ -38,7 +39,7 @@ blocks anything outside the vault.
 
 ## Before you begin
 
-To use Claude Vault Chat, you need the following:
+To use Vault Sidekick, you need the following:
 
 - Obsidian 1.7.2 or later, on desktop. The plugin doesn't run in Obsidian for mobile.
 - A Claude Pro, Max, Team, or Enterprise plan, or an Anthropic Console account. The free Claude
@@ -48,7 +49,7 @@ To use Claude Vault Chat, you need the following:
 - Optional: on Windows, [Git for Windows](https://git-scm.com/downloads/win), if you want to let
   Claude run shell commands.
 
-> **Note:** Claude Vault Chat is developed and tested on Windows 11. It's built to work on macOS
+> **Note:** Vault Sidekick is developed and tested on Windows 11. It's built to work on macOS
 > and Linux, but it hasn't been tested there yet.
 
 ## Install Claude Code
@@ -97,21 +98,21 @@ If you already use Claude Code in a terminal, skip to [Install the plugin](#inst
 
 ## Install the plugin
 
-You can install Claude Vault Chat from Obsidian's community plugin directory, or with the BRAT
+You can install Vault Sidekick from Obsidian's community plugin directory, or with the BRAT
 plugin.
 
 ### Install from the community plugin directory
 
 1. In Obsidian, open **Settings > Community plugins**.
 1. If you see **Turn on community plugins**, click it.
-1. Click **Browse**, and then search for **Claude Vault Chat**.
-1. Click **Claude Vault Chat**, and then click **Install**.
+1. Click **Browse**, and then search for **Vault Sidekick**.
+1. Click **Vault Sidekick**, and then click **Install**.
 1. Click **Enable**.
 
 Obsidian notifies you when an update is available. To update the plugin, open **Settings >
 Community plugins**, and then click **Check for updates**.
 
-If **Claude Vault Chat** doesn't appear in the directory, install it with BRAT instead.
+If **Vault Sidekick** doesn't appear in the directory, install it with BRAT instead.
 
 ### Install with BRAT
 
@@ -122,15 +123,15 @@ BRAT installs plugins directly from their GitHub repository and keeps them up to
 1. Click **Browse**, search for **BRAT**, and then install and enable it.
 1. Open the command palette (<kbd>Ctrl</kbd>+<kbd>P</kbd>, or <kbd>Cmd</kbd>+<kbd>P</kbd> on
    macOS), and run **BRAT: Add a beta plugin for testing**.
-1. Enter `FlyxHub/obsidian-claude-vault-chat`, and then click **Add Plugin**.
-1. In **Settings > Community plugins**, turn on **Claude Vault Chat**.
+1. Enter `FlyxHub/obsidian-vault-sidekick`, and then click **Add Plugin**.
+1. In **Settings > Community plugins**, turn on **Vault Sidekick**.
 
 ## Set up the plugin
 
-After you turn on the plugin, the **Claude** pane appears in the left sidebar, below the File
-Explorer.
+After you turn on the plugin, the **Vault Sidekick** pane appears in the left sidebar, below the
+File Explorer.
 
-1. Open **Settings > Claude Vault Chat**.
+1. Open **Settings > Vault Sidekick**.
 1. Click **Test connection**.
 
    If the plugin finds Claude Code and you're signed in, the result looks like the following:
@@ -150,7 +151,7 @@ If the test reports that Claude Code isn't found, see [Troubleshooting](#trouble
 
 ### Send a message
 
-1. Click the message box at the bottom of the **Claude** pane.
+1. Click the message box at the bottom of the **Vault Sidekick** pane.
 1. Enter your message. For example:
 
    ```text
@@ -201,10 +202,10 @@ To have the File Explorer expand folders and scroll to the note that Claude open
 
 - To collapse the pane to its title bar, click the arrow at the top left of the pane. To expand the
   pane, click the arrow again.
-- To give the chat more room, open the command palette and run **Claude Vault Chat: Move chat to
+- To give the chat more room, open the command palette and run **Vault Sidekick: Move chat to
   right sidebar**.
-- To bring the pane back after you close it, click the Claude icon in the left ribbon, or run
-  **Claude Vault Chat: Open or focus chat**.
+- To bring the pane back after you close it, click the Vault Sidekick icon in the left ribbon, or
+  run **Vault Sidekick: Open or focus chat**.
 
 ### Use connectors
 
@@ -222,7 +223,7 @@ that you added to Claude Code.
    ```
 
 Connectors are on by default. To stop Claude from using any of them, turn off **Connectors** in
-**Settings > Claude Vault Chat**.
+**Settings > Vault Sidekick**.
 
 Claude asks before each connector action, such as a search. To let Claude repeat an action without
 asking, click **Allow for this chat**.
@@ -254,7 +255,7 @@ installed in Claude Code.
 Claude can also choose a skill on its own when your request matches what the skill does.
 
 Skills and plugins are on by default. To turn them off, turn off **Skills and plugins** in
-**Settings > Claude Vault Chat**.
+**Settings > Vault Sidekick**.
 
 Skills use the same tools and approvals as the rest of the chat. A skill that runs scripts needs
 **Allow shell commands**, and Claude asks before each command.
@@ -268,7 +269,7 @@ start a new chat.
 
 ## Settings
 
-To change these settings, open **Settings > Claude Vault Chat**.
+To change these settings, open **Settings > Vault Sidekick**.
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -340,7 +341,7 @@ Either way, the plugin's own rules apply:
   service, and it can include text from your notes. Check each request before you allow it.
 - **What's stored on your computer:** Claude Code saves a transcript of each conversation in your
   Claude Code configuration folder (`~/.claude/projects/`). The plugin stores its settings in your
-  vault, in `.obsidian/plugins/claude-vault-chat/data.json`. The settings don't include any
+  vault, in `.obsidian/plugins/vault-sidekick/data.json`. The settings don't include any
   credentials.
 - **What the plugin collects:** nothing. The plugin doesn't make network requests of its own and
   doesn't collect usage data.
@@ -351,7 +352,7 @@ When a message fails, the chat explains what went wrong. To see Claude Code's ow
 **Details**. To go to the plugin settings, click **Open settings**.
 
 **Claude Code was not found.**
-Obsidian doesn't always find the same programs as your terminal. In **Settings > Claude Vault Chat
+Obsidian doesn't always find the same programs as your terminal. In **Settings > Vault Sidekick
 \> Executable**, enter the full path to Claude Code. To find the path, run one of the following
 commands in a terminal:
 
@@ -383,14 +384,14 @@ Check that the connector is on your Claude account at
 [claude.ai/settings/connectors](https://claude.ai/settings/connectors). Then click the plug button
 and select **Refresh**.
 
-**The Claude pane is missing.**
-Click the Claude icon in the left ribbon, or open the command palette and run **Claude Vault Chat:
-Open or focus chat**.
+**The Vault Sidekick pane is missing.**
+Click the Vault Sidekick icon in the left ribbon, or open the command palette and run **Vault
+Sidekick: Open or focus chat**.
 
 ## Uninstall the plugin
 
 1. In Obsidian, open **Settings > Community plugins**.
-1. Next to **Claude Vault Chat**, click **Uninstall**.
+1. Next to **Vault Sidekick**, click **Uninstall**.
 
 Claude Code keeps the conversation transcripts in `~/.claude/projects/`. To remove them, delete the
 folder for your vault in that location.
@@ -404,8 +405,8 @@ To build the plugin, you need [Node.js](https://nodejs.org) 24 or later.
 1. Clone the repository and install its dependencies:
 
    ```bash
-   git clone https://github.com/FlyxHub/obsidian-claude-vault-chat.git
-   cd obsidian-claude-vault-chat
+   git clone https://github.com/FlyxHub/obsidian-vault-sidekick.git
+   cd obsidian-vault-sidekick
    npm install
    ```
 
@@ -433,13 +434,13 @@ plugin folder to your repository folder so that each build is available in the v
 On Windows, in PowerShell:
 
 ```powershell
-New-Item -ItemType Junction -Path "TEST_VAULT\.obsidian\plugins\claude-vault-chat" -Target "REPO_FOLDER"
+New-Item -ItemType Junction -Path "TEST_VAULT\.obsidian\plugins\vault-sidekick" -Target "REPO_FOLDER"
 ```
 
 On macOS and Linux:
 
 ```bash
-ln -s "REPO_FOLDER" "TEST_VAULT/.obsidian/plugins/claude-vault-chat"
+ln -s "REPO_FOLDER" "TEST_VAULT/.obsidian/plugins/vault-sidekick"
 ```
 
 Replace the following:

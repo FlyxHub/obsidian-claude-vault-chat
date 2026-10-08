@@ -1,9 +1,9 @@
 {
-	"id": "claude-vault-chat",
-	"name": "Claude Vault Chat",
+	"id": "vault-sidekick",
+	"name": "Vault Sidekick",
 	"version": "1.0.0",
 	"minAppVersion": "1.7.2",
-	"description": "Chat with Claude in a sidebar, powered by your local Claude Code login. Claude can read, search, create and edit notes in this vault.",
+	"description": "A chat sidebar for your vault, powered by Claude through your local Claude Code login. Claude can read, search, create and edit your notes.",
 	"author": "FlyxHub",
 	"isDesktopOnly": true,
 	"authorUrl": "https://github.com/FlyxHub"

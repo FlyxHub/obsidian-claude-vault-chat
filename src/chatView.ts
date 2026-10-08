@@ -3,12 +3,12 @@ import type { CanUseTool, PermissionResult, SDKAssistantMessageError, SDKMessage
 import fs from 'fs';
 import path from 'path';
 import { ClaudeError, errorText, findClaude, runTurn, type Turn } from './claude';
-import type ClaudeVaultChat from './main';
+import type VaultSidekick from './main';
 import type { Settings } from './settings';
 import { withSkillNote } from './skills';
 import { vaultRelative } from './vaultPath';
 
-export const VIEW_TYPE = 'claude-vault-chat';
+export const VIEW_TYPE = 'vault-sidekick';
 
 const NEVER_ASK = new Set(['Read', 'Glob', 'Grep', 'Skill']); // reading notes; loading a skill's instructions
 const EDIT_TOOLS = new Set(['Edit', 'Write']);
@@ -59,7 +59,7 @@ export class ChatView extends ItemView {
 
 	constructor(
 		leaf: WorkspaceLeaf,
-		private plugin: ClaudeVaultChat,
+		private plugin: VaultSidekick,
 	) {
 		super(leaf);
 	}
@@ -69,7 +69,7 @@ export class ChatView extends ItemView {
 	}
 
 	getDisplayText() {
-		return 'Claude';
+		return 'Vault Sidekick';
 	}
 
 	getIcon() {
@@ -211,8 +211,8 @@ export class ChatView extends ItemView {
 		if (this.promptEl.value === '/' && !this.plugin.slashCommands.length) {
 			new Notice(
 				this.plugin.settings.skills
-					? 'No skills loaded yet. Click "Test connection" in the Claude Vault Chat settings to load them.'
-					: 'To use your skills, turn on "Skills and plugins" in the Claude Vault Chat settings.',
+					? 'No skills loaded yet. Click "Test connection" in the Vault Sidekick settings to load them.'
+					: 'To use your skills, turn on "Skills and plugins" in the Vault Sidekick settings.',
 			);
 		}
 		const query = this.slashWord()?.query;
