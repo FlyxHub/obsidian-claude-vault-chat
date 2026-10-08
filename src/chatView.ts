@@ -5,6 +5,7 @@ import path from 'path';
 import { ClaudeError, errorText, findClaude, runTurn, type Turn } from './claude';
 import type ClaudeVaultChat from './main';
 import type { Settings } from './settings';
+import { withSkillNote } from './skills';
 import { vaultRelative } from './vaultPath';
 
 export const VIEW_TYPE = 'claude-vault-chat';
@@ -198,7 +199,14 @@ export class ChatView extends ItemView {
 		chip.setAttr('aria-label', label);
 	}
 
-	// The / menu: the user's skills and plugin commands, offered while the message is just "/name".
+	/** The "/name" word being typed at the caret: where its slash is, and the text after it. */
+	private slashWord(): { start: number; query: string } | undefined {
+		const before = this.promptEl.value.slice(0, this.promptEl.selectionStart);
+		const query = /(?:^|\s)\/(\S*)$/.exec(before)?.[1];
+		return query === undefined ? undefined : { start: before.length - query.length - 1, query: query.toLowerCase() };
+	}
+
+	// The / menu: the user's skills and plugin commands, offered while a word starting with / is typed.
 	private updateSlash() {
 		if (this.promptEl.value === '/' && !this.plugin.slashCommands.length) {
 			new Notice(
@@ -207,7 +215,7 @@ export class ChatView extends ItemView {
 					: 'To use your skills, turn on "Skills and plugins" in the Claude Vault Chat settings.',
 			);
 		}
-		const query = /^\/(\S*)$/.exec(this.promptEl.value)?.[1]?.toLowerCase();
+		const query = this.slashWord()?.query;
 		this.slashItems = query === undefined ? [] : this.plugin.slashCommands.filter((c) => c.name.toLowerCase().includes(query));
 		this.slashIndex = 0;
 		this.renderSlash();
@@ -247,7 +255,8 @@ export class ChatView extends ItemView {
 	}
 
 	private pickSlash(c: SlashCommand) {
-		this.promptEl.value = `/${c.name} `;
+		const word = this.slashWord();
+		if (word) this.promptEl.setRangeText(`/${c.name} `, word.start, this.promptEl.selectionStart, 'end');
 		this.closeSlash();
 		this.refreshComposer();
 	}
@@ -373,7 +382,7 @@ export class ChatView extends ItemView {
 		this.editTargets.clear();
 		this.stopping = false;
 		this.turn = runTurn({
-			prompt: text,
+			prompt: withSkillNote(text, this.plugin.slashCommands),
 			cwd: vault,
 			exe,
 			resume: chat.sessionId,

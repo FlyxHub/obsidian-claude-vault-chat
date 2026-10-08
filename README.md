@@ -242,12 +242,13 @@ Skills give Claude instructions and tools for specific tasks, such as creating a
 plugin can use the skills that you turned on at claude.ai, and the skills and plugins that you
 installed in Claude Code.
 
-1. In the message box, type `/`. A list of your skills appears.
+1. In the message box, type `/` at the start of your message or after a space. A list of your
+   skills appears.
 1. To choose a skill, click it, or select it with the arrow keys and press <kbd>Enter</kbd>.
-1. Add your request after the skill name, and then send the message. For example:
+1. Finish your message, and then send it. The skill can go anywhere in the message. For example:
 
    ```text
-   /docx Turn [[Project plan]] into a Word document
+   Turn [[Project plan]] into a Word document with /docx
    ```
 
 Claude can also choose a skill on its own when your request matches what the skill does.
@@ -422,7 +423,7 @@ The repository has the following scripts:
 | --- | --- |
 | `npm run dev` | Rebuilds `main.js` each time that a source file changes. |
 | `npm run build` | Checks types and creates a production build. |
-| `npm test` | Runs the vault-boundary tests. |
+| `npm test` | Runs the vault-boundary and skill tests. |
 
 ### Test in a separate vault
 
@@ -457,6 +458,7 @@ After each build, turn the plugin off and on in Obsidian to load the new version
 | `src/claude.ts` | Starts Claude Code for each message and enforces the vault boundary. |
 | `src/vaultPath.ts` | The checks that keep Claude inside the vault. |
 | `src/settings.ts` | The settings tab. |
+| `src/skills.ts` | Asks Claude to load skills that are named partway through a message. |
 | `styles.css` | The chat pane's styles, based on your theme's colors. |
 | `esbuild.config.mjs` | The build, including fixes that let the Claude Agent SDK run inside Obsidian. |
 
