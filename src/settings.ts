@@ -24,9 +24,9 @@ export const DEFAULT_SETTINGS: Settings = {
 	approvalMode: 'ask',
 	allowBash: false,
 	allowWeb: false,
-	connectors: false,
+	connectors: true,
 	disabledConnectors: [],
-	skills: false,
+	skills: true,
 	autoOpen: 'reuse',
 };
 

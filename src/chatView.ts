@@ -200,6 +200,13 @@ export class ChatView extends ItemView {
 
 	// The / menu: the user's skills and plugin commands, offered while the message is just "/name".
 	private updateSlash() {
+		if (this.promptEl.value === '/' && !this.plugin.slashCommands.length) {
+			new Notice(
+				this.plugin.settings.skills
+					? 'No skills loaded yet. Click "Test connection" in the Claude Vault Chat settings to load them.'
+					: 'To use your skills, turn on "Skills and plugins" in the Claude Vault Chat settings.',
+			);
+		}
 		const query = /^\/(\S*)$/.exec(this.promptEl.value)?.[1]?.toLowerCase();
 		this.slashItems = query === undefined ? [] : this.plugin.slashCommands.filter((c) => c.name.toLowerCase().includes(query));
 		this.slashIndex = 0;

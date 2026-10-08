@@ -21,7 +21,7 @@ handles sign-in, and the plugin starts it for each message.
   allow it once, allow it for the rest of the chat, or deny it.
 - **Opens what Claude edits.** The note that Claude is editing opens in a tab, and your cursor
   stays in the chat.
-- **Looks things up for you.** Optionally, Claude can use the connectors on your Claude account,
+- **Looks things up for you.** Claude can use the connectors on your Claude account,
   such as Jira or Google Drive, and the skills and plugins that you use with Claude. Type `/` in
   the message box to pick a skill.
 - **Stays inside your vault.** Claude can't read or change files outside the vault, and it can't
@@ -215,12 +215,14 @@ that you added to Claude Code.
 1. Add the connector to your Claude account at
    [claude.ai/settings/connectors](https://claude.ai/settings/connectors), and sign in to the
    service there.
-1. In **Settings > Claude Vault Chat**, turn on **Connectors**.
 1. Ask Claude to use the service. For example:
 
    ```text
    Find the open Jira issues about onboarding and list them in [[Onboarding]]
    ```
+
+Connectors are on by default. To stop Claude from using any of them, turn off **Connectors** in
+**Settings > Claude Vault Chat**.
 
 Claude asks before each connector action, such as a search. To let Claude repeat an action without
 asking, click **Allow for this chat**.
@@ -240,7 +242,6 @@ Skills give Claude instructions and tools for specific tasks, such as creating a
 plugin can use the skills that you turned on at claude.ai, and the skills and plugins that you
 installed in Claude Code.
 
-1. In **Settings > Claude Vault Chat**, turn on **Skills and plugins**.
 1. In the message box, type `/`. A list of your skills appears.
 1. To choose a skill, click it, or select it with the arrow keys and press <kbd>Enter</kbd>.
 1. Add your request after the skill name, and then send the message. For example:
@@ -250,6 +251,9 @@ installed in Claude Code.
    ```
 
 Claude can also choose a skill on its own when your request matches what the skill does.
+
+Skills and plugins are on by default. To turn them off, turn off **Skills and plugins** in
+**Settings > Claude Vault Chat**.
 
 Skills use the same tools and approvals as the rest of the chat. A skill that runs scripts needs
 **Allow shell commands**, and Claude asks before each command.
@@ -272,8 +276,8 @@ To change these settings, open **Settings > Claude Vault Chat**.
 | **Approval mode** | **Ask before edits** | Whether Claude asks before it creates or edits notes. This setting is also in the menu below the message box. |
 | **Allow shell commands (Bash)** | Off | Lets Claude run shell commands. Claude always asks first. On Windows, this setting requires Git for Windows. |
 | **Allow web access** | Off | Lets Claude fetch web pages and search the web. Claude always asks first. |
-| **Connectors** | Off | Lets Claude use the connectors on your Claude account and the MCP servers that you added to Claude Code. Claude always asks first. To turn single connectors off, use the plug button below the message box. |
-| **Skills and plugins** | Off | Loads your Claude Code skills and plugins, and the skills that you turned on at claude.ai. Type `/` in the message box to use one. |
+| **Connectors** | On | Lets Claude use the connectors on your Claude account and the MCP servers that you added to Claude Code. Claude always asks first. To turn single connectors off, use the plug button below the message box. |
+| **Skills and plugins** | On | Loads your Claude Code skills and plugins, and the skills that you turned on at claude.ai. Type `/` in the message box to use one. |
 | **Open notes Claude edits** | **Reuse one tab** | How edited notes open: in one tab that the plugin reuses, in a new tab each time, or not at all. |
 
 ## Security and privacy
@@ -286,8 +290,8 @@ To change these settings, open **Settings > Claude Vault Chat**.
 - **Protected folders.** Claude can read but never change your Obsidian configuration folder
   (`.obsidian/` by default), `.git/`, and `.claude/`.
 - **Edits need your approval.** By default, Claude asks before it creates or changes a note.
-- **Shell commands, web access, and connectors are off.** When you turn them on, Claude asks before
-  each use.
+- **Shell commands and web access are off.** When you turn them on, Claude asks before each use.
+- **Connectors ask first.** Claude asks before each connector action.
 
 > **Caution:** Shell commands aren't limited to your vault. A shell command can read or change any
 > file that your user account can access. Turn on **Allow shell commands** only if you need it, and
@@ -297,8 +301,8 @@ To change these settings, open **Settings > Claude Vault Chat**.
 
 The plugin doesn't load Claude Code settings from a vault's `.claude/settings.json` file, or MCP
 servers from its `.mcp.json` file. These files can run commands and change where Claude Code
-connects, so loading them from a vault that someone else made would be unsafe. The plugin reads only the vault's `CLAUDE.md` file, as
-plain text instructions.
+connects, so loading them from a vault that someone else made would be unsafe. The plugin reads only
+the vault's `CLAUDE.md` file, as plain text instructions.
 
 A `CLAUDE.md` file can still ask Claude to do things. If you open a vault that someone else made,
 read its `CLAUDE.md` file before you chat in that vault, and keep **Approval mode** set to **Ask
@@ -306,22 +310,24 @@ before edits**.
 
 ### Your Claude Code configuration
 
-By default, the plugin doesn't use your personal Claude Code settings, hooks, skills, plugins, or
-MCP servers, including connectors from your Claude account. Each chat uses only the tools that the
-plugin turns on. Two settings change this:
+Two settings, both on by default, let the chat use your own Claude Code setup:
 
 - **Connectors** loads the connectors on your Claude account, the MCP servers that you added to
   Claude Code, and the MCP servers that come with your Claude Code plugins. You sign in to each
   service through claude.ai or Claude Code. The plugin never sees those sign-ins.
 - **Skills and plugins** loads your user-level Claude Code configuration (`~/.claude/`), including
   your settings, skills, plugins, and your plugins' hooks. Hooks run commands on your computer, as
-  they do when you use Claude Code in a terminal, and they aren't limited to your vault. Turn on
-  this setting only if you trust the plugins that you installed.
+  they do when you use Claude Code in a terminal, and they aren't limited to your vault. If you
+  don't trust a plugin that you installed in Claude Code, turn off this setting.
 
-With either setting on, the plugin's own rules still apply:
+With both settings off, the plugin uses none of your personal Claude Code configuration, and each
+chat uses only the tools that the plugin turns on.
+
+Either way, the plugin's own rules apply:
 
 - Every tool call goes through the vault check and your approval settings.
-- Permission rules in your Claude Code settings or in a skill can't skip the approval cards.
+- Permission rules and hooks in your Claude Code settings, plugins, or skills can't skip the
+  approval cards.
 - Skills can't run shell commands automatically when they load.
 - A vault's own `.claude/` folder and `.mcp.json` file are never loaded.
 
